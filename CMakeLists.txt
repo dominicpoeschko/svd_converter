@@ -8,8 +8,8 @@ if(NOT CMAKE_CROSSCOMPILING)
 
   project(svd_converter VERSION 0.2.0)
 
-  include(cmake/BuildOptions.cmake)
-  include(cmake/FindOrFetch.cmake)
+  include(cmake_helpers/BuildOptions.cmake)
+  include(cmake_helpers/FindOrFetch.cmake)
 
   find_or_fetch_package(fmt 8 GIT_REPOSITORY https://github.com/fmtlib/fmt.git
                         GIT_TAG master)
@@ -33,7 +33,7 @@ if(NOT CMAKE_CROSSCOMPILING)
     svd_converter PRIVATE nlohmann_json::nlohmann_json pantor::inja pugixml
                           fmt::fmt-header-only)
 else()
-  include(cmake/HostBuild.cmake)
+  include(cmake_helpers/HostBuild.cmake)
   configure_host_build(svd_converter)
 endif()
 
