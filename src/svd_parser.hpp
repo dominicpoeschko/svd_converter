@@ -1,10 +1,9 @@
 #pragma once
 
 #include "svd_types.hpp"
+#include "inja_wrapper.hpp"
+#include "fmt_wrapper.hpp"
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
-#include <inja/inja.hpp>
 #include <map>
 #include <optional>
 #include <pugixml.hpp>

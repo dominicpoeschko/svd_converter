@@ -1,6 +1,7 @@
 #pragma once
 
-#include <inja/inja.hpp>
+#include "inja_wrapper.hpp"
+
 #include <string>
 
 namespace Generator { namespace Custom {

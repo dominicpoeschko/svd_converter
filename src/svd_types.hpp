@@ -1,6 +1,6 @@
 #pragma once
 
-#include <inja/inja.hpp>
+#include "inja_wrapper.hpp"
 
 struct BitRange {
     std::uint64_t start;

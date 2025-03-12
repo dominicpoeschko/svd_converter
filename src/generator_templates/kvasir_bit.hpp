@@ -1,9 +1,9 @@
 #pragma once
 
 #include "svd_types.hpp"
+#include "inja_wrapper.hpp"
+#include "fmt_wrapper.hpp"
 
-#include <fmt/format.h>
-#include <inja/inja.hpp>
 #include <string>
 
 namespace Generator { namespace Kvasir {
