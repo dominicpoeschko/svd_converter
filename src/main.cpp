@@ -2,11 +2,10 @@
 #include "generator_templates/kvasir_bit.hpp"
 #include "svd_parser.hpp"
 
-static std::function<void(inja::json const&)> getRenderer(
-  std::string const& outpath,
-  std::string const& generator,
-  int                argc,
-  char const* const* argv) {
+static std::function<void(inja::json const&)> getRenderer(std::string const& outpath,
+                                                          std::string const& generator,
+                                                          int                argc,
+                                                          char const* const* argv) {
     auto getOutStream = [=](inja::json const& peripheral, std::string_view extension) {
         return std::ofstream{
           fmt::format("{}/{}.{}", outpath, peripheral["name"].get<std::string>(), extension)};
@@ -30,7 +29,7 @@ static std::function<void(inja::json const&)> getRenderer(
         }
         return
           [               =,
-           file_extension = std::string{argv[1]},
+           file_extension = std::string{*std::next(argv, 1)},
            env = Generator::Custom::getEnvironment(argv[0])](inja::json const& peripheral) mutable {
               getOutStream(peripheral, file_extension)
                 << env.render_file("/peripheral_template.inja", peripheral);
@@ -40,7 +39,8 @@ static std::function<void(inja::json const&)> getRenderer(
     }
 }
 
-int main(int argc, char const* const* argv) {
+int main(int                argc,
+         char const* const* argv) {
     try {
         using inja::json;
         if(argc < 4) {
@@ -49,9 +49,9 @@ int main(int argc, char const* const* argv) {
               " \"[<template path for custom_template>]\""
               " \"[<file extension for custom_template>]\"");
         }
-        std::string svdfile   = argv[1];
-        std::string outpath   = argv[2];
-        std::string generator = argv[3];
+        std::string svdfile   = *std::next(argv, 1);
+        std::string outpath   = *std::next(argv, 2);
+        std::string generator = *std::next(argv, 3);
 
         if(generator != "kvasir_bit" && generator != "json" && generator != "custom_template") {
             throw std::runtime_error("bad generator");
@@ -69,15 +69,15 @@ int main(int argc, char const* const* argv) {
 
         inja::json chip = ChipFromSVD(device);
 
-        auto render = getRenderer(outpath, generator, argc - 4, argv + 4);
+        auto render = getRenderer(outpath, generator, argc - 4, std::next(argv, 4));
 
-        for(auto const& p : chip["peripherals"]) {
-            render(p);
+        for(auto const& peripheral : chip["peripherals"]) {
+            render(peripheral);
         }
 
         return 0;
-    } catch(std::exception const& e) {
-        fmt::print(stderr, "catched {}\n", e.what());
+    } catch(std::exception const& exception) {
+        fmt::print(stderr, "caught {}\n", exception.what());
         return 1;
     }
 }

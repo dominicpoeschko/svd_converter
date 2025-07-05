@@ -1,0 +1,58 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 45c17d6..a757ced 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,4 +1,4 @@
+-cmake_minimum_required(VERSION 3.5)
++cmake_minimum_required(VERSION 3.25)
+ 
+ # See https://cmake.org/cmake/help/latest/policy/CMP0077.html
+ # This allows for setting option variables externally, when this project
+@@ -64,7 +64,7 @@ else()
+   if(TARGET nlohmann_json)
+     set(INJA_SELECTED_JSON_LIBRARY "nlohmann_json::nlohmann_json")
+ 
+-    install(TARGETS nlohmann_json EXPORT injaTargets)
++    #    install(TARGETS nlohmann_json EXPORT injaTargets)
+   else()
+     find_package(nlohmann_json REQUIRED)
+     set(INJA_SELECTED_JSON_LIBRARY "nlohmann_json::nlohmann_json")
+@@ -75,7 +75,7 @@ endif()
+ target_link_libraries(inja INTERFACE ${INJA_SELECTED_JSON_LIBRARY})
+ 
+ 
+-execute_process(COMMAND scripts/update_single_include.sh WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
++#execute_process(COMMAND scripts/update_single_include.sh WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+ 
+ 
+ if(BUILD_TESTING AND INJA_BUILD_TESTS)
+@@ -145,11 +145,11 @@ configure_file(
+ install(TARGETS inja EXPORT injaTargets)
+ 
+ 
+-export(
+-  EXPORT injaTargets
+-  NAMESPACE pantor::
+-  FILE "${CMAKE_CURRENT_BINARY_DIR}/injaTargets.cmake"
+-)
++#export(
++#  EXPORT injaTargets
++#  NAMESPACE pantor::
++#  FILE "${CMAKE_CURRENT_BINARY_DIR}/injaTargets.cmake"
++#)
+ 
+ # build tree package config
+ configure_file(
+diff --git a/cmake/config/injaBuildConfig.cmake.in b/cmake/config/injaBuildConfig.cmake.in
+index ccbc2ae..dff5c2c 100644
+--- a/cmake/config/injaBuildConfig.cmake.in
++++ b/cmake/config/injaBuildConfig.cmake.in
+@@ -5,7 +5,7 @@ set(INJA_PACKAGE_USE_EMBEDDED_JSON "@INJA_PACKAGE_USE_EMBEDDED_JSON@")
+ include(CMakeFindDependencyMacro)
+ 
+ if(NOT INJA_PACKAGE_USE_EMBEDDED_JSON)
+-    find_dependency(nlohmann_json REQUIRED)
++    #    find_dependency(nlohmann_json REQUIRED)
+ endif()
+ 
+ include("${CMAKE_CURRENT_LIST_DIR}/injaTargets.cmake")

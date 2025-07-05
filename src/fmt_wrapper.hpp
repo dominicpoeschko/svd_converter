@@ -8,6 +8,14 @@
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wsign-conversion"
+    #pragma clang diagnostic ignored "-Wsign-conversion"
+    #pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
+    #pragma clang diagnostic ignored "-Wswitch-default"
+    #pragma clang diagnostic ignored "-Wfloat-equal"
+    #pragma clang diagnostic ignored "-Wreserved-macro-identifier"
+    #pragma clang diagnostic ignored "-Wduplicate-enum"
+    #pragma clang diagnostic ignored "-Wswitch-enum"
+    #pragma clang diagnostic ignored "-Wglobal-constructors"
 #endif
 
 #include <fmt/format.h>

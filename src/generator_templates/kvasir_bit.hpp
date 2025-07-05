@@ -1,8 +1,8 @@
 #pragma once
 
-#include "svd_types.hpp"
-#include "inja_wrapper.hpp"
 #include "fmt_wrapper.hpp"
+#include "inja_wrapper.hpp"
+#include "svd_types.hpp"
 
 #include <string>
 
@@ -176,8 +176,8 @@ struct {{ upper(register.name) }} {
         {% endif %}
     {% endfor %})"};
 
-    template<typename F>
-    static constexpr auto apply_fields(F&& f){
+    template<typename Func>
+    static constexpr auto apply_fields(Func&& func){
         {% if length(register.fields) > 0  %}
             auto const regs = apply(read(
         {% endif %}
@@ -201,7 +201,7 @@ struct {{ upper(register.name) }} {
         {% endif %}
 
         {% set getIndex = 0 %}
-        return std::invoke(std::forward<F>(f)
+        return std::invoke(std::forward<Func>(func)
             {% if length(register.fields) > 0  %}
                 ,
             {% endif %}
@@ -233,10 +233,10 @@ struct {{ upper(register.name) }} {
             {% endfor %}
         );
     }
-    template<typename F>
-    static constexpr auto apply_fields_with_dim(F&& f) {
+    template<typename Func>
+    static constexpr auto apply_fields_with_dim(Func&& func) {
         return apply_fields([&](auto&&... fields) {
-            return std::invoke(std::forward<F>(f),
+            return std::invoke(std::forward<Func>(func),
             {% if inRegisterGroup %}
                 GroupIndex,
             {% endif %}
@@ -366,21 +366,23 @@ static constexpr FieldLocation<Addr,
             auto value  = args.at(0)->get<std::uint64_t>();
             auto values = args.at(1);
 
-            std::string vv;
-            for(auto const& v : *values) {
-                if(v["value"].get<std::uint64_t>() == value) {
-                    vv = v["name"].get<std::string>();
+            std::string foundName;
+            for(auto const& enumValue : *values) {
+                if(enumValue["value"].get<std::uint64_t>() == value) {
+                    foundName = enumValue["name"].get<std::string>();
                     break;
                 }
             }
 
-            if(vv.empty()) {
+            if(foundName.empty()) {
                 return std::string{"???"};
             }
 
-            std::transform(begin(vv), end(vv), begin(vv), [](auto c) { return std::tolower(c); });
+            std::ranges::transform(foundName, foundName.begin(), [](auto character) {
+                return std::tolower(character);
+            });
 
-            return vv;
+            return foundName;
         });
 
         env.add_callback("allValidDefault", 1, [](inja::Arguments& args) {
@@ -404,12 +406,12 @@ static constexpr FieldLocation<Addr,
 
         env.add_callback("makeAccess", 3, [](inja::Arguments& args) {
             //auto access = args.at(0)->get<Access>();
-            //auto mval   = args.at(1)->get<ModifiedWriteValues>();
-            //auto ract   = args.at(2)->get<ReadAction>();
+            //auto modifiedWriteValues   = args.at(1)->get<ModifiedWriteValues>();
+            //auto readAction   = args.at(2)->get<ReadAction>();
 
-            auto as = args.at(0)->get<std::string>();
-            as[0]   = static_cast<char>(std::toupper(as[0]));
-            return as + "Access";
+            auto accessString = args.at(0)->get<std::string>();
+            accessString[0]   = static_cast<char>(std::toupper(accessString[0]));
+            return accessString + "Access";
         });
 
         env.include_template("RegisterGroup", env.parse(RegisterGroupTemplate));
