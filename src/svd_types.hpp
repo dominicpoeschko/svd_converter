@@ -12,7 +12,7 @@ struct BitRange {
     std::uint64_t stop;
 };
 
-enum class DataType { u8, u16, u32, u64 };
+enum class DataType : std::uint8_t { u8, u16, u32, u64 };
 
 NLOHMANN_JSON_SERIALIZE_ENUM(DataType,
                              {
@@ -26,7 +26,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(DataType,
                                 "u64"}
 })
 
-enum class RepeatType {
+enum class RepeatType : std::uint8_t {
     normal,
     cluster,
 };
@@ -39,7 +39,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(RepeatType,
                                 "cluster"}
 })
 
-enum class FieldType { normal, enum_ };
+enum class FieldType : std::uint8_t { normal, enum_ };
 
 NLOHMANN_JSON_SERIALIZE_ENUM(FieldType,
                              {
@@ -49,7 +49,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(FieldType,
                                 "enum"  }
 })
 
-enum class Access { readOnly, writeOnly, readWrite, writeOnce, readWriteOnce };
+enum class Access : std::uint8_t { readOnly, writeOnly, readWrite, writeOnce, readWriteOnce };
 
 NLOHMANN_JSON_SERIALIZE_ENUM(Access,
                              {
@@ -65,7 +65,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(Access,
                                 "readWriteOnce"},
 })
 
-enum class ModifiedWriteValues {
+enum class ModifiedWriteValues : std::uint8_t {
     empty,
     oneToClear,
     oneToSet,
@@ -101,7 +101,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(ModifiedWriteValues,
                                {      ModifiedWriteValues::modify,
                                 "modify"      },
 })
-enum class ReadAction { empty, clear, set, modify, modifyExternal };
+enum class ReadAction : std::uint8_t { empty, clear, set, modify, modifyExternal };
 
 NLOHMANN_JSON_SERIALIZE_ENUM(ReadAction,
                              {
@@ -120,7 +120,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(ReadAction,
 struct Value {
     std::string   name;
     std::string   description;
-    std::uint64_t value;
+    std::uint64_t value = 0;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Value,
                                    name,
                                    description,
@@ -130,17 +130,17 @@ struct Value {
 struct Field {
     std::string         name;
     std::string         description;
-    FieldType           type;
-    RepeatType          repType;
-    std::uint64_t       dim;
-    std::uint64_t       dimIncrement;
-    std::uint64_t       resetValue;
-    std::uint64_t       startBit;
-    std::uint64_t       stopBit;
-    DataType            dataType;
-    Access              access;
-    ModifiedWriteValues modifiedWriteValues;
-    ReadAction          readAction;
+    FieldType           type                = FieldType::normal;
+    RepeatType          repType             = RepeatType::normal;
+    std::uint64_t       dim                 = 0;
+    std::uint64_t       dimIncrement        = 0;
+    std::uint64_t       resetValue          = 0;
+    std::uint64_t       startBit            = 0;
+    std::uint64_t       stopBit             = 0;
+    DataType            dataType            = DataType::u32;
+    Access              access              = Access::readWrite;
+    ModifiedWriteValues modifiedWriteValues = ModifiedWriteValues::empty;
+    ReadAction          readAction          = ReadAction::empty;
     std::vector<Value>  values;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Field,
                                    name,
@@ -162,14 +162,14 @@ struct Field {
 struct Register {
     std::string        name;
     std::string        description;
-    RepeatType         type;
-    std::uint64_t      dim;
-    std::uint64_t      dimIncrement;
-    DataType           dataType;
-    std::uint64_t      addressOffset;
-    std::uint64_t      resetValue;
-    std::uint64_t      zeroMask;
-    std::uint64_t      oneMask;
+    RepeatType         type          = RepeatType::normal;
+    std::uint64_t      dim           = 0;
+    std::uint64_t      dimIncrement  = 0;
+    DataType           dataType      = DataType::u32;
+    std::uint64_t      addressOffset = 0;
+    std::uint64_t      resetValue    = 0;
+    std::uint64_t      zeroMask      = 0;
+    std::uint64_t      oneMask       = 0;
     std::vector<Field> fields;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Register,
                                    name,
@@ -188,9 +188,9 @@ struct Register {
 struct RegisterGroup {
     std::string           name;
     std::string           description;
-    std::uint64_t         dim;
-    std::uint64_t         dimIncrement;
-    std::uint64_t         addressOffset;
+    std::uint64_t         dim           = 0;
+    std::uint64_t         dimIncrement  = 0;
+    std::uint64_t         addressOffset = 0;
     std::vector<Register> registers;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(RegisterGroup,
                                    name,
@@ -212,8 +212,8 @@ struct AddressType {
 struct Peripheral {
     std::string                name;
     std::string                description;
-    RepeatType                 type;
-    DataType                   addressType;
+    RepeatType                 type        = RepeatType::normal;
+    DataType                   addressType = DataType::u32;
     std::vector<Register>      registers;
     std::vector<RegisterGroup> registerGroups;
     std::vector<AddressType>   baseAddresses;

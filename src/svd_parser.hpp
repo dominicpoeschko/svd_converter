@@ -66,11 +66,12 @@ inline std::string sanitizeName(std::string name,
     static constexpr std::array kvasirKeywords{"value"};
     for(auto& character : name) {
         if(full) {
-            if(std::ispunct(character)) {
+            if(std::ispunct(character) != 0) {
                 character = '_';
             }
         } else {
-            if(std::ispunct(character) && character != '[' && character != ']' && character != '%')
+            if(std::ispunct(character) != 0 && character != '[' && character != ']'
+               && character != '%')
             {
                 character = '_';
             }
@@ -84,7 +85,7 @@ inline std::string sanitizeName(std::string name,
                 return std::tolower(character);
             });
             if(keyword == lowercaseValue) {
-                name = "_" + name;
+                name.insert(0, "_");
                 break;
             }
         }
@@ -94,13 +95,13 @@ inline std::string sanitizeName(std::string name,
     sanitizeKeyword(kvasirKeywords);
 
     if(!name.empty()) {
-        if(std::isdigit(name.front())) {
-            name = "_" + name;
+        if(std::isdigit(name.front()) != 0) {
+            name.insert(0, "_");
         }
     }
 
     for(auto& character : name) {
-        if(std::isspace(character)) {
+        if(std::isspace(character) != 0) {
             character = '_';
         }
     }
@@ -149,9 +150,9 @@ inline std::string sanitizeName(std::string name,
 template<typename T>
 T fromSVDString(std::string_view svdString) {
     if constexpr(std::is_same_v<T, std::uint64_t>) {
-        std::size_t position;
-        std::string str{svdString};
-        auto        value = std::stoull(str, &position, 0);
+        std::size_t       position = 0;
+        std::string const str{svdString};
+        auto              value = std::stoull(str, &position, 0);
         if(position == 0) {
             throw std::runtime_error(fmt::format("no valid number {}", svdString));
         }
@@ -205,7 +206,7 @@ T fromSVDString(std::string_view svdString) {
         }
         throw std::runtime_error(fmt::format("bad access {}", svdString));
     } else if constexpr(std::is_same_v<T, ModifiedWriteValues>) {
-        if(svdString == "") {
+        if(svdString.empty()) {
             return ModifiedWriteValues::empty;
         }
         if(svdString == "oneToClear") {
@@ -237,7 +238,7 @@ T fromSVDString(std::string_view svdString) {
         }
         throw std::runtime_error(fmt::format("bad modifiedWriteValues {}", svdString));
     } else if constexpr(std::is_same_v<T, ReadAction>) {
-        if(svdString == "") {
+        if(svdString.empty()) {
             return ReadAction::empty;
         }
         if(svdString == "clear") {
@@ -382,9 +383,11 @@ inline Field FieldFromSVD(pugi::xml_node const& field,
     }
 
     if(!found) {
-        std::string p1 = field.parent().parent().parent().child("name").text().as_string();
-        std::string p2 = field.parent().parent().parent().parent().child("name").text().as_string();
-        auto        parent = p1.empty() ? p2 : p1;
+        std::string const peripheral_name
+          = field.parent().parent().parent().child("name").text().as_string();
+        std::string const device_name
+          = field.parent().parent().parent().parent().child("name").text().as_string();
+        auto parent = peripheral_name.empty() ? device_name : peripheral_name;
         fmt::print(stderr,
                    "no valid ResetValue in {}::{}::{}\n",
                    parent,
@@ -443,24 +446,25 @@ RegisterFromSVD(pugi::xml_node const& reg,
 
     auto fields = reg.child("fields");
     if(fields.empty()) {
-        std::string p1     = reg.parent().parent().child("name").text().as_string();
-        std::string p2     = reg.parent().parent().parent().child("name").text().as_string();
-        auto        parent = p1.empty() ? p2 : p1;
+        std::string const peripheral_name = reg.parent().parent().child("name").text().as_string();
+        std::string const device_name
+          = reg.parent().parent().parent().child("name").text().as_string();
+        auto parent = peripheral_name.empty() ? device_name : peripheral_name;
         fmt::print(stderr, "no fields in {}::{}\n", parent, registerResult.name);
         return registerResult;
     }
 
-    for(auto const& f : fields.children("field")) {
-        auto fieldFromSvd = FieldFromSVD(f,
+    for(auto const& field_node : fields.children("field")) {
+        auto fieldFromSvd = FieldFromSVD(field_node,
                                          accessType,
                                          registerResult.dataType,
                                          registerResult.resetValue,
                                          modifiedWriteValues,
                                          readAction);
 
-        if(!(fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::oneToClear
-             || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::oneToSet
-             || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::oneToToggle))
+        if(fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToClear
+           && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToSet
+           && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToToggle)
         {
             registerResult.zeroMask
               = clearBits(registerResult.zeroMask, fieldFromSvd.startBit, fieldFromSvd.stopBit);
@@ -484,8 +488,8 @@ std::vector<Register> makeRegister(Regs const& regs,
                                    DataType    type) {
     std::vector<Register>  parsedRegs;
     std::vector<derived_t> parsedDerived;
-    for(auto const& r : regs) {
-        auto parsed_reg = RegisterFromSVD(r, access, type);
+    for(auto const& registerNode : regs) {
+        auto parsed_reg = RegisterFromSVD(registerNode, access, type);
 
         if(std::holds_alternative<Register>(parsed_reg)) {
             parsedRegs.push_back(std::move(std::get<Register>(parsed_reg)));
@@ -495,26 +499,26 @@ std::vector<Register> makeRegister(Regs const& regs,
     }
 
     std::vector<Register> parsedRegsDerived;
-    for(auto const& d : parsedDerived) {
-        auto const& [name, baseName, address, processed] = d;
+    for(auto const& derived_reg : parsedDerived) {
+        auto const& [name, baseName, address, processed] = derived_reg;
         auto basename                                    = remove_PercentS(baseName);
         bool found                                       = false;
-        for(auto const& r : parsedRegs) {
-            if(r.name == basename) {
+        for(auto const& registerItem : parsedRegs) {
+            if(registerItem.name == basename) {
                 found = true;
-                parsedRegsDerived.push_back(r);
+                parsedRegsDerived.push_back(registerItem);
                 auto& newreg         = parsedRegsDerived.back();
                 newreg.name          = remove_PercentS(name);
                 newreg.addressOffset = address;
                 break;
             }
         }
-        if(found == false) {
+        if(!found) {
             throw std::runtime_error("derived register not found");
         }
     }
-    for(auto& d : parsedRegsDerived) {
-        parsedRegs.push_back(std::move(d));
+    for(auto& derivedReg : parsedRegsDerived) {
+        parsedRegs.push_back(std::move(derivedReg));
     }
 
     return parsedRegs;
@@ -544,11 +548,11 @@ inline RegisterGroup RegisterGroupFromSVD(pugi::xml_node regg,
 }
 
 inline Peripheral ClusterFromSVD(pugi::xml_node    cluster,
-                                 Peripheral const& p,
+                                 Peripheral const& peripheral_ref,
                                  Access            access,
                                  DataType          type) {
-    Peripheral peripheral = p;
-    peripheral.name       = getCheckedSVD<std::string>(cluster, "name", "Cluster " + p.name);
+    Peripheral peripheral = peripheral_ref;
+    peripheral.name = getCheckedSVD<std::string>(cluster, "name", "Cluster " + peripheral_ref.name);
     peripheral.description
       += " " + sanitizeDescription(getDefaultSVD(cluster, "description", std::string{}));
 
@@ -564,50 +568,59 @@ PeripheralFromSVD(pugi::xml_node const& peripheral,
                   Access                access,
                   DataType              addressType,
                   DataType              type) {
-    Peripheral p;
-    p.name = getCheckedSVD<std::string>(peripheral, "name", "Peripheral");
-    p.baseAddresses.push_back(
-      {0, getCheckedSVD<std::uint64_t>(peripheral, "baseAddress", "Peripheral " + p.name)});
+    Peripheral peripheral_result;
+    peripheral_result.name = getCheckedSVD<std::string>(peripheral, "name", "Peripheral");
+    peripheral_result.baseAddresses.push_back(
+      {0,
+       getCheckedSVD<std::uint64_t>(peripheral,
+                                    "baseAddress",
+                                    "Peripheral " + peripheral_result.name)});
 
     auto derived = peripheral.attribute("derivedFrom");
     if(!derived.empty()) {
-        return derived_t{p.name, derived.value(), p.baseAddresses.back().address, false};
+        return derived_t{peripheral_result.name,
+                         derived.value(),
+                         peripheral_result.baseAddresses.back().address,
+                         false};
     }
 
-    p.description = sanitizeDescription(getDefaultSVD(peripheral, "description", std::string{}));
-    p.addressType = addressType;
-    p.type        = RepeatType::normal;
+    peripheral_result.description
+      = sanitizeDescription(getDefaultSVD(peripheral, "description", std::string{}));
+    peripheral_result.addressType = addressType;
+    peripheral_result.type        = RepeatType::normal;
 
     auto registers = peripheral.child("registers");
     if(registers.empty()) {
-        fmt::print(stderr, "no registers in {}\n", p.name);
-        return p;
+        fmt::print(stderr, "no registers in {}\n", peripheral_result.name);
+        return peripheral_result;
     }
 
-    p.registers = makeRegister(registers.children("register"), access, type);
+    peripheral_result.registers = makeRegister(registers.children("register"), access, type);
 
     auto const cluster = registers.children("cluster");
-    for(auto const& c : cluster) {
-        if(c.child("dim").empty()) {
+    for(auto const& cluster_node : cluster) {
+        if(cluster_node.child("dim").empty()) {
             continue;
         }
-        p.registerGroups.push_back(RegisterGroupFromSVD(c, access, type));
+        peripheral_result.registerGroups.push_back(
+          RegisterGroupFromSVD(cluster_node, access, type));
     }
 
-    cluster_t cl;
-    cl.second = p.name;
-    for(auto const& c : cluster) {
-        if(!c.child("dim").empty()) {
+    cluster_t cluster_result;
+    cluster_result.second = peripheral_result.name;
+    for(auto const& cluster_node : cluster) {
+        if(!cluster_node.child("dim").empty()) {
             continue;
         }
-        cl.first.push_back(ClusterFromSVD(c, p, access, type));
+        cluster_result.first.push_back(
+          ClusterFromSVD(cluster_node, peripheral_result, access, type));
     }
 
-    if(!cl.first.empty()) {
-        return cl;
+    if(!cluster_result.first.empty()) {
+        return cluster_result;
     }
 
-    return p;
+    return peripheral_result;
 }
 }   // namespace
 
@@ -627,22 +640,22 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
     std::vector<derived_t> derived;
     std::vector<cluster_t> cluster;
     for(auto const& peripheral : peripherals.children("peripheral")) {
-        auto pp = PeripheralFromSVD(peripheral, access, width, size);
-        if(std::holds_alternative<derived_t>(pp)) {
-            derived.push_back(std::move(std::get<derived_t>(pp)));
-        } else if(std::holds_alternative<cluster_t>(pp)) {
-            cluster.push_back(std::move(std::get<cluster_t>(pp)));
+        auto peripheral_variant = PeripheralFromSVD(peripheral, access, width, size);
+        if(std::holds_alternative<derived_t>(peripheral_variant)) {
+            derived.push_back(std::move(std::get<derived_t>(peripheral_variant)));
+        } else if(std::holds_alternative<cluster_t>(peripheral_variant)) {
+            cluster.push_back(std::move(std::get<cluster_t>(peripheral_variant)));
         } else {
-            chip.peripherals.push_back(std::move(std::get<Peripheral>(pp)));
+            chip.peripherals.push_back(std::move(std::get<Peripheral>(peripheral_variant)));
         }
     }
 
-    for(auto& p : chip.peripherals) {
-        std::string newName = p.name;
-        RepeatType  newType = p.type;
-        for(auto& d : derived) {
-            auto& [name, baseName, address, processed] = d;
-            if(baseName != p.name) {
+    for(auto& peripheral_ref : chip.peripherals) {
+        std::string newName = peripheral_ref.name;
+        RepeatType  newType = peripheral_ref.type;
+        for(auto& derived_ref : derived) {
+            auto& [name, baseName, address, processed] = derived_ref;
+            if(baseName != peripheral_ref.name) {
                 continue;
             }
             if(processed) {
@@ -651,11 +664,13 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
 
             auto const& derivedName = name;
 
-            auto miss
-              = std::mismatch(begin(p.name), end(p.name), begin(derivedName), end(derivedName));
-            if(miss.first == end(p.name)) {
-                if(derivedName.size() != p.name.size() + 1) {
-                    fmt::print(stderr, "something wrong ? {} {}\n", p.name, derivedName);
+            auto miss = std::ranges::mismatch(peripheral_ref.name, derivedName);
+            if(miss.in1 == end(peripheral_ref.name)) {
+                if(derivedName.size() != peripheral_ref.name.size() + 1) {
+                    fmt::print(stderr,
+                               "something wrong ? {} {}\n",
+                               peripheral_ref.name,
+                               derivedName);
                     continue;
                 }
             }
@@ -663,23 +678,24 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
             processed = true;
 
             newType = RepeatType::cluster;
-            newName.resize(static_cast<std::size_t>(std::distance(begin(p.name), miss.first)));
+            newName.resize(
+              static_cast<std::size_t>(std::distance(begin(peripheral_ref.name), miss.in1)));
 
-            std::string num = derivedName.substr(newName.size());
+            std::string const num = derivedName.substr(newName.size());
 
-            p.baseAddresses.emplace_back(std::stoull(num), address);
+            peripheral_ref.baseAddresses.emplace_back(std::stoull(num), address);
         }
-        p.name = newName;
-        p.type = newType;
+        peripheral_ref.name = newName;
+        peripheral_ref.type = newType;
     }
 
-    for(auto& c : cluster) {
-        auto& [clusterPeripherals, clusterName] = c;
+    for(auto& cluster_ref : cluster) {
+        auto& [clusterPeripherals, clusterName] = cluster_ref;
         std::string              newName        = clusterName;
         RepeatType               newType        = RepeatType::normal;
         std::vector<AddressType> newAddr;
-        for(auto& d : derived) {
-            auto& [name, baseName, address, processed] = d;
+        for(auto& derived_ref : derived) {
+            auto& [name, baseName, address, processed] = derived_ref;
             if(baseName != clusterName) {
                 continue;
             }
@@ -689,11 +705,8 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
 
             auto const& derivedName = name;
 
-            auto miss = std::mismatch(begin(clusterName),
-                                      end(clusterName),
-                                      begin(derivedName),
-                                      end(derivedName));
-            if(miss.first == end(clusterName)) {
+            auto miss = std::ranges::mismatch(clusterName, derivedName);
+            if(miss.in1 == end(clusterName)) {
                 if(derivedName.size() != clusterName.size() + 1) {
                     fmt::print(stderr, "something wrong ? {} {}\n", clusterName, derivedName);
                     continue;
@@ -703,52 +716,52 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
             processed = true;
 
             newType = RepeatType::cluster;
-            newName.resize(static_cast<std::size_t>(std::distance(begin(clusterName), miss.first)));
+            newName.resize(static_cast<std::size_t>(std::distance(begin(clusterName), miss.in1)));
 
-            std::string num = derivedName.substr(newName.size());
+            std::string const num = derivedName.substr(newName.size());
 
             newAddr.emplace_back(std::stoull(num), address);
         }
 
-        for(auto& p : clusterPeripherals) {
-            p.name = fmt::format("{}_{}", newName, p.name);
-            p.type = newType;
-            std::copy(begin(newAddr), end(newAddr), std::back_inserter(p.baseAddresses));
-            chip.peripherals.push_back(std::move(p));
+        for(auto& peripheral_ref : clusterPeripherals) {
+            peripheral_ref.name = fmt::format("{}_{}", newName, peripheral_ref.name);
+            peripheral_ref.type = newType;
+            std::ranges::copy(newAddr, std::back_inserter(peripheral_ref.baseAddresses));
+            chip.peripherals.push_back(std::move(peripheral_ref));
         }
     }
 
-    for(auto const& d : derived) {
-        auto const& [name, baseName, address, processed] = d;
+    for(auto const& derived_ref : derived) {
+        auto const& [name, baseName, address, processed] = derived_ref;
         if(!processed) {
             fmt::print(stderr, "have not found derived peripheral {}\n", name);
         }
     }
 
-    for(auto& p : chip.peripherals) {
-        auto pname = p.name + "_";
+    for(auto& peripheral_ref : chip.peripherals) {
+        auto pname = peripheral_ref.name + "_";
 
-        auto removePeripheral = [&](std::string& s) {
-            if(s.find(pname) == 0) {
-                s.erase(0, pname.size());
+        auto removePeripheral = [&](std::string& str_ref) {
+            if(str_ref.starts_with(pname)) {
+                str_ref.erase(0, pname.size());
             }
         };
 
         auto removePeripheralReg = [&](auto& reg) {
             removePeripheral(reg.name);
-            for(auto f : reg.fields) {
-                removePeripheral(f.name);
-                for(auto v : f.values) {
-                    removePeripheral(v.name);
+            for(auto field_ref : reg.fields) {
+                removePeripheral(field_ref.name);
+                for(auto value_ref : field_ref.values) {
+                    removePeripheral(value_ref.name);
                 }
             }
         };
-        for(auto& r : p.registers) {
-            removePeripheralReg(r);
+        for(auto& register_ref : peripheral_ref.registers) {
+            removePeripheralReg(register_ref);
         }
-        for(auto& rg : p.registerGroups) {
-            for(auto& r : rg.registers) {
-                removePeripheralReg(r);
+        for(auto& register_group : peripheral_ref.registerGroups) {
+            for(auto& register_ref : register_group.registers) {
+                removePeripheralReg(register_ref);
             }
         }
     }

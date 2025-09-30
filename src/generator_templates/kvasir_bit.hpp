@@ -66,7 +66,7 @@ struct {{ upper(registerGroup.name) }} {
     static_assert(GroupIndex < {{ registerGroup.dim }});
     static constexpr {{ dataType(addressType) }} groupBaseAddr =
       baseAddr
-        + GroupIndex  * {{ hex(registerGroup.dimIncrement, "min") }}
+        + (GroupIndex  * {{ hex(registerGroup.dimIncrement, "min") }})
         + {{ hex(registerGroup.addressOffset, "min") }};
     {% for register in registerGroup.registers %}
         {% set baseAddrString = "groupBaseAddr" %}
@@ -89,7 +89,7 @@ struct {{ upper(register.name) }} {
     using Addr = Address< {{ baseAddrString }}
                             + {{ hex(register.addressOffset, "min") }}
                             {% if register.type != "normal" %}
-                                + Index * {{ hex(register.dimIncrement, "min") }}
+                                + (Index * {{ hex(register.dimIncrement, "min") }})
                             {% endif %},
                         {{ hex(register.zeroMask, register.dataType) }},
                         {{ hex(register.oneMask, register.dataType) }},
@@ -146,7 +146,7 @@ struct {{ upper(register.name) }} {
 
     {% endif %}
 
-    static constexpr std::string_view fmt_string{"{{ lower(name) }}::{% set noNL=1 %}
+    static constexpr std::string_view fmt_string{R"({{ lower(name) }}::{% set noNL=1 %}
     {% if inRegisterGroup %}
 {{ lower(registerGroup.name) }}[{}]::{% set noNL=1 %}
     {% endif %}
@@ -163,18 +163,18 @@ struct {{ upper(register.name) }} {
         {% endif %}
         {% if field.repType == "cluster" %}
             {% for i in range(field.dim) %}
-\"{{ lower(field.name)  }}[{{ i }}]\": {{ fmt }}{% set noNL=1 %}
+"{{ lower(field.name)  }}[{{ i }}]": {{ fmt }}{% set noNL=1 %}
                 {% if not loop/is_last -%}
                     , {% set noNL=1 %}
                 {% endif %}
             {% endfor %}
         {% else %}
-\"{{ lower(field.name) }}\": {{ fmt }}{% set noNL=1 %}
+"{{ lower(field.name) }}": {{ fmt }}{% set noNL=1 %}
         {% endif %}
         {% if not loop/is_last -%}
             , {% set noNL=1 %}
         {% endif %}
-    {% endfor %})"};
+    {% endfor %}))"};
 
     template<typename Func>
     static constexpr auto apply_fields(Func&& func){
@@ -268,11 +268,11 @@ static constexpr FieldLocation<Addr,
                                maskFromRange(
                                 {{ field.stopBit }}
                                 {% if field.repType != "normal" %}
-                                    + FieldIndex * {{ field.dimIncrement }}
+                                    + (FieldIndex * {{ field.dimIncrement }})
                                 {% endif %},
                                 {{ field.startBit }}
                                 {% if field.repType != "normal" %}
-                                    + FieldIndex * {{ field.dimIncrement }}
+                                    + (FieldIndex * {{ field.dimIncrement }})
                                 {% endif %}),
                                {{ makeAccess(field.access, field.modifiedWriteValues, field.readAction) }},
                                {{ upper(field.name) }}Val>
@@ -303,11 +303,11 @@ static constexpr FieldLocation<Addr,
               maskFromRange(
                 {{ field.stopBit }}
                 {% if field.repType != "normal" %}
-                    + FieldIndex * {{ field.dimIncrement }}
+                    + (FieldIndex * {{ field.dimIncrement }})
                 {% endif %},
                 {{ field.startBit }}
                 {% if field.repType != "normal" %}
-                    + FieldIndex * {{ field.dimIncrement }}
+                    + (FieldIndex * {{ field.dimIncrement }})
                 {% endif %}),
               {{ makeAccess(field.access, field.modifiedWriteValues, field.readAction) }},
               {{ dataType(field.dataType) }}>
@@ -329,7 +329,7 @@ static constexpr FieldLocation<Addr,
             auto dataType = args.at(1)->get<std::string>();
 
             unsigned width{};
-            if(dataType == "u8" || dataType == "b") {
+            if(dataType == "u8" || dataType == "b" || dataType == "min") {
                 width = 2;
             } else if(dataType == "u16") {
                 width = 4;
@@ -337,8 +337,6 @@ static constexpr FieldLocation<Addr,
                 width = 8;
             } else if(dataType == "u64") {
                 width = 16;
-            } else if(dataType == "min") {
-                width = 2;
             } else {
                 throw std::runtime_error("hex failed");
             }
@@ -405,10 +403,6 @@ static constexpr FieldLocation<Addr,
         });
 
         env.add_callback("makeAccess", 3, [](inja::Arguments& args) {
-            //auto access = args.at(0)->get<Access>();
-            //auto modifiedWriteValues   = args.at(1)->get<ModifiedWriteValues>();
-            //auto readAction   = args.at(2)->get<ReadAction>();
-
             auto accessString = args.at(0)->get<std::string>();
             accessString[0]   = static_cast<char>(std::toupper(accessString[0]));
             return accessString + "Access";
