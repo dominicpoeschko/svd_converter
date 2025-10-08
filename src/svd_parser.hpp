@@ -1,12 +1,13 @@
 #pragma once
 
-#include "fmt_wrapper.hpp"
 #include "inja_wrapper.hpp"
 #include "svd_types.hpp"
 
 #include <algorithm>
+#include <format>
 #include <map>
 #include <optional>
+#include <print>
 #include <pugixml.hpp>
 #include <ranges>
 #include <string>
@@ -154,21 +155,21 @@ T fromSVDString(std::string_view svdString) {
         std::string const str{svdString};
         auto              value = std::stoull(str, &position, 0);
         if(position == 0) {
-            throw std::runtime_error(fmt::format("no valid number {}", svdString));
+            throw std::runtime_error(std::format("no valid number {}", svdString));
         }
         return value;
     } else if constexpr(std::is_same_v<T, std::string>) {
         return std::string{svdString};
     } else if constexpr(std::is_same_v<T, BitRange>) {
         if(svdString.empty()) {
-            throw std::runtime_error(fmt::format("wrong bitRange {}", svdString));
+            throw std::runtime_error(std::format("wrong bitRange {}", svdString));
         }
         if(svdString.front() != '[' || svdString.back() != ']') {
-            throw std::runtime_error(fmt::format("wrong bitRange {}", svdString));
+            throw std::runtime_error(std::format("wrong bitRange {}", svdString));
         }
         auto const colonPos = svdString.find_first_of(':');
         if(colonPos == std::string::npos || colonPos != svdString.find_last_of(':')) {
-            throw std::runtime_error(fmt::format("wrong bitRange {}", svdString));
+            throw std::runtime_error(std::format("wrong bitRange {}", svdString));
         }
         auto msbString = svdString.substr(1, colonPos);
         auto lsbString = svdString.substr(colonPos + 1, svdString.size() - 1);
@@ -176,7 +177,7 @@ T fromSVDString(std::string_view svdString) {
         auto msb = fromSVDString<std::uint64_t>(msbString);
         auto lsb = fromSVDString<std::uint64_t>(lsbString);
         if(lsb > msb) {
-            throw std::runtime_error(fmt::format("wrong bitRange {}", svdString));
+            throw std::runtime_error(std::format("wrong bitRange {}", svdString));
         }
         return BitRange{.start = lsb, .stop = msb};
     } else if constexpr(std::is_same_v<T, DataType>) {
@@ -186,7 +187,7 @@ T fromSVDString(std::string_view svdString) {
         case 16: return DataType::u16;
         case 32: return DataType::u32;
         case 64: return DataType::u64;
-        default: throw std::runtime_error(fmt::format("wrong size {} {}", size, svdString));
+        default: throw std::runtime_error(std::format("wrong size {} {}", size, svdString));
         }
     } else if constexpr(std::is_same_v<T, Access>) {
         if(svdString == "read-only") {
@@ -204,7 +205,7 @@ T fromSVDString(std::string_view svdString) {
         if(svdString == "read-WriteOnce") {
             return Access::readWriteOnce;
         }
-        throw std::runtime_error(fmt::format("bad access {}", svdString));
+        throw std::runtime_error(std::format("bad access {}", svdString));
     } else if constexpr(std::is_same_v<T, ModifiedWriteValues>) {
         if(svdString.empty()) {
             return ModifiedWriteValues::empty;
@@ -236,7 +237,7 @@ T fromSVDString(std::string_view svdString) {
         if(svdString == "modify") {
             return ModifiedWriteValues::modify;
         }
-        throw std::runtime_error(fmt::format("bad modifiedWriteValues {}", svdString));
+        throw std::runtime_error(std::format("bad modifiedWriteValues {}", svdString));
     } else if constexpr(std::is_same_v<T, ReadAction>) {
         if(svdString.empty()) {
             return ReadAction::empty;
@@ -253,7 +254,7 @@ T fromSVDString(std::string_view svdString) {
         if(svdString == "modifyExternal") {
             return ReadAction::modifyExternal;
         }
-        throw std::runtime_error(fmt::format("bad ReadAction {}", svdString));
+        throw std::runtime_error(std::format("bad ReadAction {}", svdString));
     } else {
         static_assert(false, "Unsupported type for fromSVDString");
     }
@@ -388,7 +389,7 @@ inline Field FieldFromSVD(pugi::xml_node const& field,
         std::string const device_name
           = field.parent().parent().parent().parent().child("name").text().as_string();
         auto parent = peripheral_name.empty() ? device_name : peripheral_name;
-        fmt::print(stderr,
+        std::print(stderr,
                    "no valid ResetValue in {}::{}::{}\n",
                    parent,
                    field.parent().parent().child("name").text().as_string(),
@@ -450,7 +451,7 @@ RegisterFromSVD(pugi::xml_node const& reg,
         std::string const device_name
           = reg.parent().parent().parent().child("name").text().as_string();
         auto parent = peripheral_name.empty() ? device_name : peripheral_name;
-        fmt::print(stderr, "no fields in {}::{}\n", parent, registerResult.name);
+        std::print(stderr, "no fields in {}::{}\n", parent, registerResult.name);
         return registerResult;
     }
 
@@ -591,7 +592,7 @@ PeripheralFromSVD(pugi::xml_node const& peripheral,
 
     auto registers = peripheral.child("registers");
     if(registers.empty()) {
-        fmt::print(stderr, "no registers in {}\n", peripheral_result.name);
+        std::print(stderr, "no registers in {}\n", peripheral_result.name);
         return peripheral_result;
     }
 
@@ -667,7 +668,7 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
             auto miss = std::ranges::mismatch(peripheral_ref.name, derivedName);
             if(miss.in1 == end(peripheral_ref.name)) {
                 if(derivedName.size() != peripheral_ref.name.size() + 1) {
-                    fmt::print(stderr,
+                    std::print(stderr,
                                "something wrong ? {} {}\n",
                                peripheral_ref.name,
                                derivedName);
@@ -708,7 +709,7 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
             auto miss = std::ranges::mismatch(clusterName, derivedName);
             if(miss.in1 == end(clusterName)) {
                 if(derivedName.size() != clusterName.size() + 1) {
-                    fmt::print(stderr, "something wrong ? {} {}\n", clusterName, derivedName);
+                    std::print(stderr, "something wrong ? {} {}\n", clusterName, derivedName);
                     continue;
                 }
             }
@@ -724,7 +725,7 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
         }
 
         for(auto& peripheral_ref : clusterPeripherals) {
-            peripheral_ref.name = fmt::format("{}_{}", newName, peripheral_ref.name);
+            peripheral_ref.name = std::format("{}_{}", newName, peripheral_ref.name);
             peripheral_ref.type = newType;
             std::ranges::copy(newAddr, std::back_inserter(peripheral_ref.baseAddresses));
             chip.peripherals.push_back(std::move(peripheral_ref));
@@ -734,7 +735,7 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
     for(auto const& derived_ref : derived) {
         auto const& [name, baseName, address, processed] = derived_ref;
         if(!processed) {
-            fmt::print(stderr, "have not found derived peripheral {}\n", name);
+            std::print(stderr, "have not found derived peripheral {}\n", name);
         }
     }
 

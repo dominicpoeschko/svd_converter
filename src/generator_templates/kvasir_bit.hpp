@@ -1,9 +1,9 @@
 #pragma once
 
-#include "fmt_wrapper.hpp"
 #include "inja_wrapper.hpp"
 #include "svd_types.hpp"
 
+#include <format>
 #include <string>
 
 namespace Generator { namespace Kvasir {
@@ -341,7 +341,7 @@ static constexpr FieldLocation<Addr,
                 throw std::runtime_error("hex failed");
             }
 
-            return fmt::format("0x{:0{}X}", number, width);
+            return std::format("0x{:0{}X}", number, width);
         });
 
         env.add_callback("dataType", 1, [](inja::Arguments& args) {
@@ -357,7 +357,7 @@ static constexpr FieldLocation<Addr,
 
             dataType.erase(0, 1);
 
-            return fmt::format("std::uint{}_t", dataType);
+            return std::format("std::uint{}_t", dataType);
         });
 
         env.add_callback("enumResetValue", 2, [](inja::Arguments& args) {

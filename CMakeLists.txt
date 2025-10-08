@@ -16,9 +16,6 @@ if(NOT CMAKE_CROSSCOMPILING)
     include(cmake_helpers/BuildOptions.cmake)
     include(cmake_helpers/FindOrFetch.cmake)
 
-    option(FMT_INSTALL "" OFF)
-    find_or_fetch_package(fmt GIT_REPOSITORY https://github.com/fmtlib/fmt.git GIT_TAG master)
-
     find_or_fetch_package(nlohmann_json GIT_REPOSITORY https://github.com/nlohmann/json GIT_TAG master)
 
     option(PUGIXML_INSTALL "" OFF)
@@ -45,7 +42,7 @@ if(NOT CMAKE_CROSSCOMPILING)
     target_include_directories(svd_converter PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src")
     target_add_default_build_options(svd_converter PRIVATE)
 
-    target_link_libraries(svd_converter PRIVATE nlohmann_json::nlohmann_json pantor::inja pugixml fmt::fmt-header-only)
+    target_link_libraries(svd_converter PRIVATE nlohmann_json::nlohmann_json pantor::inja pugixml)
 else()
     include(cmake_helpers/HostBuild.cmake)
     configure_host_build(svd_converter)

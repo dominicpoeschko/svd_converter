@@ -1,13 +1,14 @@
-#include "fmt_wrapper.hpp"
 #include "generator_templates/custom.hpp"
 #include "generator_templates/kvasir_bit.hpp"
 #include "inja_wrapper.hpp"
 #include "svd_parser.hpp"
 
 #include <exception>
+#include <format>
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <print>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -20,7 +21,7 @@ std::function<void(inja::json const&)> getRenderer(std::string const& outpath,
                                                    char const* const* argv) {
     auto getOutStream = [=](inja::json const& peripheral, std::string_view extension) {
         return std::ofstream{
-          fmt::format("{}/{}.{}", outpath, peripheral["name"].get<std::string>(), extension)};
+          std::format("{}/{}.{}", outpath, peripheral["name"].get<std::string>(), extension)};
     };
 
     if(generator == "json") {
@@ -92,7 +93,7 @@ int main(int                argc,
 
         return 0;
     } catch(std::exception const& exception) {
-        fmt::print(stderr, "caught {}\n", exception.what());
+        std::print(stderr, "caught {}\n", exception.what());
         return 1;
     }
 }
