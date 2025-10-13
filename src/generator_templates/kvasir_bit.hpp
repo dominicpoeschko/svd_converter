@@ -135,13 +135,13 @@ struct {{ upper(register.name) }} {
         {% endif %}
     {% endfor %}
     ));
-    template<typename... Ts>
-    static constexpr auto overrideDefaults(Ts const&... ts){
-        return Register::overrideDefaults<default_values>::value(ts...);
+    template<typename... Actions>
+    static constexpr auto overrideDefaults(Actions const&... actions){
+        return Register::overrideDefaults<default_values>::value(actions...);
     }
-    template<typename... Ts>
-    static constexpr auto overrideDefaultsRuntime(Ts const&... ts){
-        return Register::overrideDefaultsRuntime<default_values>::exec(ts...);
+    template<typename... Actions>
+    static constexpr auto overrideDefaultsRuntime(Actions const&... actions){
+        return Register::overrideDefaultsRuntime<default_values>::exec(actions...);
     }
 
     {% endif %}
