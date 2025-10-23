@@ -67,9 +67,7 @@ inline std::string sanitizeName(std::string name,
     static constexpr std::array kvasirKeywords{"value"};
     for(auto& character : name) {
         if(full) {
-            if(std::ispunct(character) != 0) {
-                character = '_';
-            }
+            if(std::ispunct(character) != 0) { character = '_'; }
         } else {
             if(std::ispunct(character) != 0 && character != '[' && character != ']'
                && character != '%')
@@ -96,15 +94,11 @@ inline std::string sanitizeName(std::string name,
     sanitizeKeyword(kvasirKeywords);
 
     if(!name.empty()) {
-        if(std::isdigit(name.front()) != 0) {
-            name.insert(0, "_");
-        }
+        if(std::isdigit(name.front()) != 0) { name.insert(0, "_"); }
     }
 
     for(auto& character : name) {
-        if(std::isspace(character) != 0) {
-            character = '_';
-        }
+        if(std::isspace(character) != 0) { character = '_'; }
     }
 
     name = remove_PercentS(name);
@@ -122,9 +116,7 @@ inline std::string sanitizeName(std::string name,
     auto replace = [&](std::string_view needle) {
         while(true) {
             auto position = std::ranges::search(description, needle).begin();
-            if(position == description.end()) {
-                break;
-            }
+            if(position == description.end()) { break; }
             auto erasePosition
               = description.erase(position,
                                   std::next(position, static_cast<int>(needle.size()) - 1));
@@ -138,9 +130,7 @@ inline std::string sanitizeName(std::string name,
     replace("\\r");
     replace("\\t");
     replace("  ");
-    if(description.starts_with(" ")) {
-        description.erase(0, 1);
-    }
+    if(description.starts_with(" ")) { description.erase(0, 1); }
     if(description.ends_with(" ")) {
         description.erase(std::next(description.end(), -1), description.end());
     }
@@ -176,9 +166,7 @@ T fromSVDString(std::string_view svdString) {
 
         auto msb = fromSVDString<std::uint64_t>(msbString);
         auto lsb = fromSVDString<std::uint64_t>(lsbString);
-        if(lsb > msb) {
-            throw std::runtime_error(std::format("wrong bitRange {}", svdString));
-        }
+        if(lsb > msb) { throw std::runtime_error(std::format("wrong bitRange {}", svdString)); }
         return BitRange{.start = lsb, .stop = msb};
     } else if constexpr(std::is_same_v<T, DataType>) {
         auto size = fromSVDString<std::uint64_t>(svdString);
@@ -190,70 +178,30 @@ T fromSVDString(std::string_view svdString) {
         default: throw std::runtime_error(std::format("wrong size {} {}", size, svdString));
         }
     } else if constexpr(std::is_same_v<T, Access>) {
-        if(svdString == "read-only") {
-            return Access::readOnly;
-        }
-        if(svdString == "write-only") {
-            return Access::writeOnly;
-        }
-        if(svdString == "read-write") {
-            return Access::readWrite;
-        }
-        if(svdString == "writeOnce") {
-            return Access::writeOnce;
-        }
-        if(svdString == "read-WriteOnce") {
-            return Access::readWriteOnce;
-        }
+        if(svdString == "read-only") { return Access::readOnly; }
+        if(svdString == "write-only") { return Access::writeOnly; }
+        if(svdString == "read-write") { return Access::readWrite; }
+        if(svdString == "writeOnce") { return Access::writeOnce; }
+        if(svdString == "read-WriteOnce") { return Access::readWriteOnce; }
         throw std::runtime_error(std::format("bad access {}", svdString));
     } else if constexpr(std::is_same_v<T, ModifiedWriteValues>) {
-        if(svdString.empty()) {
-            return ModifiedWriteValues::empty;
-        }
-        if(svdString == "oneToClear") {
-            return ModifiedWriteValues::oneToClear;
-        }
-        if(svdString == "oneToSet") {
-            return ModifiedWriteValues::oneToSet;
-        }
-        if(svdString == "oneToToggle") {
-            return ModifiedWriteValues::oneToToggle;
-        }
-        if(svdString == "zeroToClear") {
-            return ModifiedWriteValues::zeroToClear;
-        }
-        if(svdString == "zeroToSet") {
-            return ModifiedWriteValues::zeroToSet;
-        }
-        if(svdString == "zeroToToggle") {
-            return ModifiedWriteValues::zeroToToggle;
-        }
-        if(svdString == "clear") {
-            return ModifiedWriteValues::clear;
-        }
-        if(svdString == "set") {
-            return ModifiedWriteValues::set;
-        }
-        if(svdString == "modify") {
-            return ModifiedWriteValues::modify;
-        }
+        if(svdString.empty()) { return ModifiedWriteValues::empty; }
+        if(svdString == "oneToClear") { return ModifiedWriteValues::oneToClear; }
+        if(svdString == "oneToSet") { return ModifiedWriteValues::oneToSet; }
+        if(svdString == "oneToToggle") { return ModifiedWriteValues::oneToToggle; }
+        if(svdString == "zeroToClear") { return ModifiedWriteValues::zeroToClear; }
+        if(svdString == "zeroToSet") { return ModifiedWriteValues::zeroToSet; }
+        if(svdString == "zeroToToggle") { return ModifiedWriteValues::zeroToToggle; }
+        if(svdString == "clear") { return ModifiedWriteValues::clear; }
+        if(svdString == "set") { return ModifiedWriteValues::set; }
+        if(svdString == "modify") { return ModifiedWriteValues::modify; }
         throw std::runtime_error(std::format("bad modifiedWriteValues {}", svdString));
     } else if constexpr(std::is_same_v<T, ReadAction>) {
-        if(svdString.empty()) {
-            return ReadAction::empty;
-        }
-        if(svdString == "clear") {
-            return ReadAction::clear;
-        }
-        if(svdString == "set") {
-            return ReadAction::set;
-        }
-        if(svdString == "modify") {
-            return ReadAction::modify;
-        }
-        if(svdString == "modifyExternal") {
-            return ReadAction::modifyExternal;
-        }
+        if(svdString.empty()) { return ReadAction::empty; }
+        if(svdString == "clear") { return ReadAction::clear; }
+        if(svdString == "set") { return ReadAction::set; }
+        if(svdString == "modify") { return ReadAction::modify; }
+        if(svdString == "modifyExternal") { return ReadAction::modifyExternal; }
         throw std::runtime_error(std::format("bad ReadAction {}", svdString));
     } else {
         static_assert(false, "Unsupported type for fromSVDString");
@@ -265,9 +213,7 @@ auto getDefaultSVD(pugi::xml_node const& node,
                    std::string_view      name,
                    T const&              defaultValue) -> T {
     auto const xmlValue = node.child(name);
-    if(xmlValue.empty()) {
-        return defaultValue;
-    }
+    if(xmlValue.empty()) { return defaultValue; }
     return fromSVDString<T>(xmlValue.text().as_string());
 }
 
@@ -275,9 +221,7 @@ template<typename T>
 auto getOptionalSVD(pugi::xml_node const& node,
                     std::string_view      name) -> std::optional<T> {
     auto const xmlValue = node.child(name);
-    if(xmlValue.empty()) {
-        return std::nullopt;
-    }
+    if(xmlValue.empty()) { return std::nullopt; }
     return fromSVDString<T>(xmlValue.text().as_string());
 }
 
@@ -351,9 +295,7 @@ inline Field FieldFromSVD(pugi::xml_node const& field,
     if(!field.child("dim").empty()) {
         fieldResult.dim          = getCheckedSVD<std::uint64_t>(field, "dim", "Field");
         fieldResult.dimIncrement = getCheckedSVD<std::uint64_t>(field, "dimIncrement", "Field");
-        if(fieldResult.dim == 0) {
-            throw std::runtime_error("register dim should not be 0");
-        }
+        if(fieldResult.dim == 0) { throw std::runtime_error("register dim should not be 0"); }
     } else {
         fieldResult.dim          = 0;
         fieldResult.dimIncrement = 0;
@@ -366,9 +308,7 @@ inline Field FieldFromSVD(pugi::xml_node const& field,
     }
 
     auto values = field.child("enumeratedValues");
-    if(values.empty()) {
-        return fieldResult;
-    }
+    if(values.empty()) { return fieldResult; }
 
     fieldResult.type = FieldType::enum_;
     for(auto const& enumValueNode : values.children("enumeratedValue")) {
@@ -407,9 +347,7 @@ RegisterFromSVD(pugi::xml_node const& reg,
     Register registerResult;
     registerResult.name = sanitizeName(getCheckedSVD<std::string>(reg, "name", "Register"));
     auto displayName    = getOptionalSVD<std::string>(reg, "displayName");
-    if(displayName) {
-        registerResult.name = sanitizeName(*displayName);
-    }
+    if(displayName) { registerResult.name = sanitizeName(*displayName); }
     registerResult.addressOffset = getCheckedSVD<std::uint64_t>(reg, "addressOffset", "Register");
 
     auto derived = reg.attribute("derivedFrom");
@@ -431,9 +369,7 @@ RegisterFromSVD(pugi::xml_node const& reg,
     if(!reg.child("dim").empty()) {
         registerResult.dim          = getCheckedSVD<std::uint64_t>(reg, "dim", "Register");
         registerResult.dimIncrement = getCheckedSVD<std::uint64_t>(reg, "dimIncrement", "Register");
-        if(registerResult.dim == 0) {
-            throw std::runtime_error("register dim should not be 0");
-        }
+        if(registerResult.dim == 0) { throw std::runtime_error("register dim should not be 0"); }
     } else {
         registerResult.dim          = 0;
         registerResult.dimIncrement = 0;
@@ -514,13 +450,9 @@ std::vector<Register> makeRegister(Regs const& regs,
                 break;
             }
         }
-        if(!found) {
-            throw std::runtime_error("derived register not found");
-        }
+        if(!found) { throw std::runtime_error("derived register not found"); }
     }
-    for(auto& derivedReg : parsedRegsDerived) {
-        parsedRegs.push_back(std::move(derivedReg));
-    }
+    for(auto& derivedReg : parsedRegsDerived) { parsedRegs.push_back(std::move(derivedReg)); }
 
     return parsedRegs;
 }
@@ -539,9 +471,7 @@ inline RegisterGroup RegisterGroupFromSVD(pugi::xml_node regg,
       = getCheckedSVD<std::uint64_t>(regg, "addressOffset", "RegisterGroup");
 
     auto pos = registerGroup.name.find("[%s]");
-    if(pos != std::string::npos) {
-        registerGroup.name.erase(pos, 4);
-    }
+    if(pos != std::string::npos) { registerGroup.name.erase(pos, 4); }
 
     registerGroup.registers = makeRegister(regg.children("register"), access, type);
 
@@ -600,9 +530,7 @@ PeripheralFromSVD(pugi::xml_node const& peripheral,
 
     auto const cluster = registers.children("cluster");
     for(auto const& cluster_node : cluster) {
-        if(cluster_node.child("dim").empty()) {
-            continue;
-        }
+        if(cluster_node.child("dim").empty()) { continue; }
         peripheral_result.registerGroups.push_back(
           RegisterGroupFromSVD(cluster_node, access, type));
     }
@@ -610,16 +538,12 @@ PeripheralFromSVD(pugi::xml_node const& peripheral,
     cluster_t cluster_result;
     cluster_result.second = peripheral_result.name;
     for(auto const& cluster_node : cluster) {
-        if(!cluster_node.child("dim").empty()) {
-            continue;
-        }
+        if(!cluster_node.child("dim").empty()) { continue; }
         cluster_result.first.push_back(
           ClusterFromSVD(cluster_node, peripheral_result, access, type));
     }
 
-    if(!cluster_result.first.empty()) {
-        return cluster_result;
-    }
+    if(!cluster_result.first.empty()) { return cluster_result; }
 
     return peripheral_result;
 }
@@ -634,9 +558,7 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
     auto size        = getDefaultSVD(device, "size", DataType::u32);
 
     auto peripherals = device.child("peripherals");
-    if(peripherals.empty()) {
-        throw std::runtime_error("no peripherals");
-    }
+    if(peripherals.empty()) { throw std::runtime_error("no peripherals"); }
 
     std::vector<derived_t> derived;
     std::vector<cluster_t> cluster;
@@ -656,9 +578,7 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
         RepeatType  newType = peripheral_ref.type;
         for(auto& derived_ref : derived) {
             auto& [name, baseName, address, processed] = derived_ref;
-            if(baseName != peripheral_ref.name) {
-                continue;
-            }
+            if(baseName != peripheral_ref.name) { continue; }
             if(processed) {
                 throw std::runtime_error("found derived peripheral multiple times " + name);
             }
@@ -697,9 +617,7 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
         std::vector<AddressType> newAddr;
         for(auto& derived_ref : derived) {
             auto& [name, baseName, address, processed] = derived_ref;
-            if(baseName != clusterName) {
-                continue;
-            }
+            if(baseName != clusterName) { continue; }
             if(processed) {
                 throw std::runtime_error("found derived peripheral multiple times " + name);
             }
@@ -734,32 +652,24 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
 
     for(auto const& derived_ref : derived) {
         auto const& [name, baseName, address, processed] = derived_ref;
-        if(!processed) {
-            std::print(stderr, "have not found derived peripheral {}\n", name);
-        }
+        if(!processed) { std::print(stderr, "have not found derived peripheral {}\n", name); }
     }
 
     for(auto& peripheral_ref : chip.peripherals) {
         auto pname = peripheral_ref.name + "_";
 
         auto removePeripheral = [&](std::string& str_ref) {
-            if(str_ref.starts_with(pname)) {
-                str_ref.erase(0, pname.size());
-            }
+            if(str_ref.starts_with(pname)) { str_ref.erase(0, pname.size()); }
         };
 
         auto removePeripheralReg = [&](auto& reg) {
             removePeripheral(reg.name);
             for(auto field_ref : reg.fields) {
                 removePeripheral(field_ref.name);
-                for(auto value_ref : field_ref.values) {
-                    removePeripheral(value_ref.name);
-                }
+                for(auto value_ref : field_ref.values) { removePeripheral(value_ref.name); }
             }
         };
-        for(auto& register_ref : peripheral_ref.registers) {
-            removePeripheralReg(register_ref);
-        }
+        for(auto& register_ref : peripheral_ref.registers) { removePeripheralReg(register_ref); }
         for(auto& register_group : peripheral_ref.registerGroups) {
             for(auto& register_ref : register_group.registers) {
                 removePeripheralReg(register_ref);

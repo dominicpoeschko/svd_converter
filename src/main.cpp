@@ -79,17 +79,13 @@ int main(int                argc,
         }
 
         auto device = doc.child("device");
-        if(device.empty()) {
-            throw std::runtime_error("device empty");
-        }
+        if(device.empty()) { throw std::runtime_error("device empty"); }
 
         inja::json chip = ChipFromSVD(device);
 
         auto render = getRenderer(outpath, generator, argc - 4, std::next(argv, 4));
 
-        for(auto const& peripheral : chip["peripherals"]) {
-            render(peripheral);
-        }
+        for(auto const& peripheral : chip["peripherals"]) { render(peripheral); }
 
         return 0;
     } catch(std::exception const& exception) {

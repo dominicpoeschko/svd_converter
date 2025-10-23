@@ -347,9 +347,7 @@ static constexpr FieldLocation<Addr,
         env.add_callback("dataType", 1, [](inja::Arguments& args) {
             auto dataType = args.at(0)->get<std::string>();
 
-            if(dataType == "b") {
-                return std::string{"bool"};
-            }
+            if(dataType == "b") { return std::string{"bool"}; }
 
             if(dataType != "u8" && dataType != "u16" && dataType != "u32" && dataType != "u64") {
                 throw std::runtime_error(dataType + " dataType failed");
@@ -372,9 +370,7 @@ static constexpr FieldLocation<Addr,
                 }
             }
 
-            if(foundName.empty()) {
-                return std::string{"???"};
-            }
+            if(foundName.empty()) { return std::string{"???"}; }
 
             std::ranges::transform(foundName, foundName.begin(), [](auto character) {
                 return std::tolower(character);
@@ -394,9 +390,7 @@ static constexpr FieldLocation<Addr,
                         break;
                     }
                 }
-                if(!valid && !field.values.empty()) {
-                    return false;
-                }
+                if(!valid && !field.values.empty()) { return false; }
             }
 
             return true;
