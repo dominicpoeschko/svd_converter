@@ -34,9 +34,36 @@ if(NOT CMAKE_CROSSCOMPILING)
         main
         PATCH_COMMAND
         git
+        reset
+        --hard
+        HEAD
+        &&
+        git
+        clean
+        -fdx
+        &&
+        git
         apply
+        --3way
+        ${CMAKE_CURRENT_LIST_DIR}/inja.patch
+        UPDATE_COMMAND
+        git
+        fetch
+        origin
+        &&
+        git
+        reset
+        --hard
+        @{u}
+        &&
+        git
+        clean
+        -fdx
+        &&
+        git
+        apply
+        --3way
         ${CMAKE_CURRENT_LIST_DIR}/inja.patch)
-
     add_executable(svd_converter src/main.cpp)
 
     target_include_directories(svd_converter PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src")
