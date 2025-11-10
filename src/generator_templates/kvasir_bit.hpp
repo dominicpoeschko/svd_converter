@@ -95,6 +95,8 @@ struct {{ upper(register.name) }} {
                         {{ hex(register.oneMask, register.dataType) }},
                         {{ dataType(register.dataType) }}>;
 
+    static constexpr FieldLocation<Addr, maskFromRange({{maxBitDataType(register.dataType) }}, 0), ReadWriteAccess, {{ dataType(register.dataType) }}> FULLREGISTER{};
+
     {% for field in register.fields %}
         {% if field.type == "enum" %}
             {% include "Enum" %}
@@ -356,6 +358,17 @@ static constexpr FieldLocation<Addr,
             dataType.erase(0, 1);
 
             return std::format("std::uint{}_t", dataType);
+        });
+
+        env.add_callback("maxBitDataType", 1, [](inja::Arguments& args) {
+            auto dataType = args.at(0)->get<std::string>();
+
+            if(dataType == "u8" || dataType == "b") { return std::string{"7"}; }
+            if(dataType == "u16") { return std::string{"15"}; }
+            if(dataType == "u32") { return std::string{"31"}; }
+            if(dataType == "u64") { return std::string{"63"}; }
+
+            throw std::runtime_error(dataType + " maxBitDataType failed");
         });
 
         env.add_callback("enumResetValue", 2, [](inja::Arguments& args) {
