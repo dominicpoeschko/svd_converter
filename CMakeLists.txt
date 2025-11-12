@@ -144,7 +144,8 @@ function(svd_convert targetname)
             COMMAND ${command}
             COMMAND ${CMAKE_COMMAND} -E touch ${oname}
             DEPENDS svd_converter ${iname} ${svd_converter_bin} ${template_files}
-            OUTPUT ${oname} ${outfiles})
+            OUTPUT ${oname} ${outfiles}
+            COMMENT "Converting ${iname} to ${PARSED_ARGS_GENERATOR} format: ${targetname}")
     else()
         add_custom_command(
             COMMAND ${CMAKE_COMMAND} -E make_directory ${dname}
@@ -152,7 +153,8 @@ function(svd_convert targetname)
             COMMAND ${CLANG_FORMAT} --Wno-error=unknown -i ${dname}/*.hpp || true
             COMMAND ${CMAKE_COMMAND} -E touch ${oname}
             DEPENDS svd_converter ${iname} ${svd_converter_bin} ${template_files}
-            OUTPUT ${oname} ${outfiles})
+            OUTPUT ${oname} ${outfiles}
+            COMMENT "Converting and formatting ${iname} to ${PARSED_ARGS_GENERATOR}: ${targetname}")
     endif()
 
     if(${CMAKE_VERSION} VERSION_LESS "3.19.0")
