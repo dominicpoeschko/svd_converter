@@ -148,7 +148,7 @@ struct {{ upper(register.name) }} {
 
     {% endif %}
 
-    static constexpr std::string_view fmt_string{R"({{ lower(name) }}::{% set noNL=1 %}
+    static constexpr std::string_view fmt_string{"{{ lower(name) }}::{% set noNL=1 %}
     {% if inRegisterGroup %}
 {{ lower(registerGroup.name) }}[{}]::{% set noNL=1 %}
     {% endif %}
@@ -156,7 +156,7 @@ struct {{ upper(register.name) }} {
     {% if register.type == "cluster" %}
 [{}]{% set noNL=1 %}
     {% endif %}
-({% set noNL=1 %}
+(\n{% set noNL=1 %}
     {% for field in register.fields %}
         {% if field.type == "enum" %}
             {% set fmt="{}" %}
@@ -165,18 +165,18 @@ struct {{ upper(register.name) }} {
         {% endif %}
         {% if field.repType == "cluster" %}
             {% for i in range(field.dim) %}
-"{{ lower(field.name)  }}[{{ i }}]": {{ fmt }}{% set noNL=1 %}
+\"{{ lower(field.name)  }}[{{ i }}]\": {{ fmt }}{% set noNL=1 %}
                 {% if not loop/is_last -%}
-                    , {% set noNL=1 %}
+                    \n{% set noNL=1 %}
                 {% endif %}
             {% endfor %}
         {% else %}
-"{{ lower(field.name) }}": {{ fmt }}{% set noNL=1 %}
+\"{{ lower(field.name) }}\": {{ fmt }}{% set noNL=1 %}
         {% endif %}
         {% if not loop/is_last -%}
-            , {% set noNL=1 %}
+            \n{% set noNL=1 %}
         {% endif %}
-    {% endfor %}))"};
+    {% endfor %})"};
 
     template<typename Func>
     static constexpr auto apply_fields(Func&& func){
