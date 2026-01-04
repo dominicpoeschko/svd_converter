@@ -16,10 +16,24 @@ if(NOT CMAKE_CROSSCOMPILING)
     include(cmake_helpers/BuildOptions.cmake)
     include(cmake_helpers/FindOrFetch.cmake)
 
-    find_or_fetch_package(nlohmann_json GIT_REPOSITORY https://github.com/nlohmann/json GIT_TAG master)
+    find_or_fetch_package(
+        nlohmann_json
+        GIT_REPOSITORY
+        https://github.com/nlohmann/json
+        GIT_TAG
+        v3.12.0
+        GIT_BRANCH
+        master)
 
     option(PUGIXML_INSTALL "" OFF)
-    find_or_fetch_package(pugixml GIT_REPOSITORY https://github.com/zeux/pugixml GIT_TAG master)
+    find_or_fetch_package(
+        pugixml
+        GIT_REPOSITORY
+        https://github.com/zeux/pugixml
+        GIT_TAG
+        v1.15
+        GIT_BRANCH
+        master)
 
     option(INJA_USE_EMBEDDED_JSON "" OFF)
     option(INJA_INSTALL "" OFF)
@@ -31,39 +45,12 @@ if(NOT CMAKE_CROSSCOMPILING)
         GIT_REPOSITORY
         https://github.com/pantor/inja
         GIT_TAG
+        v3.5.0
+        GIT_BRANCH
         main
-        PATCH_COMMAND
-        git
-        reset
-        --hard
-        HEAD
-        &&
-        git
-        clean
-        -fdx
-        &&
-        git
-        apply
-        --3way
-        ${CMAKE_CURRENT_LIST_DIR}/inja.patch
-        UPDATE_COMMAND
-        git
-        fetch
-        origin
-        &&
-        git
-        reset
-        --hard
-        @{u}
-        &&
-        git
-        clean
-        -fdx
-        &&
-        git
-        apply
-        --3way
+        PATCH_FILE
         ${CMAKE_CURRENT_LIST_DIR}/inja.patch)
+
     add_executable(svd_converter src/main.cpp)
 
     target_include_directories(svd_converter PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src")
