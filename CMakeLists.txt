@@ -8,8 +8,7 @@ include(FetchContent)
 FetchContent_Declare(
     cmake_helpers
     GIT_REPOSITORY https://github.com/dominicpoeschko/cmake_helpers.git
-    GIT_TAG master
-)
+    GIT_TAG master)
 FetchContent_MakeAvailable(cmake_helpers)
 
 if(NOT CMAKE_CROSSCOMPILING)
