@@ -4,6 +4,14 @@ if(TARGET svd_converter)
     return()
 endif()
 
+include(FetchContent)
+FetchContent_Declare(
+    cmake_helpers
+    GIT_REPOSITORY https://github.com/dominicpoeschko/cmake_helpers.git
+    GIT_TAG master
+)
+FetchContent_MakeAvailable(cmake_helpers)
+
 if(NOT CMAKE_CROSSCOMPILING)
 
     project(
@@ -13,8 +21,8 @@ if(NOT CMAKE_CROSSCOMPILING)
         HOMEPAGE_URL "https://github.com/dominicpoeschko/svd_converter"
         LANGUAGES CXX)
 
-    include(cmake_helpers/BuildOptions.cmake)
-    include(cmake_helpers/FindOrFetch.cmake)
+    include(${cmake_helpers_SOURCE_DIR}/BuildOptions.cmake)
+    include(${cmake_helpers_SOURCE_DIR}/FindOrFetch.cmake)
 
     find_or_fetch_package(
         nlohmann_json
@@ -58,7 +66,7 @@ if(NOT CMAKE_CROSSCOMPILING)
 
     target_link_libraries(svd_converter PRIVATE nlohmann_json::nlohmann_json pantor::inja pugixml)
 else()
-    include(cmake_helpers/HostBuild.cmake)
+    include(${cmake_helpers_SOURCE_DIR}/HostBuild.cmake)
     configure_host_build(svd_converter)
 endif()
 
