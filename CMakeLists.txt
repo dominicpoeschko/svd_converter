@@ -105,7 +105,7 @@ function(svd_convert targetname)
     if(NOT CMAKE_CROSSCOMPILING)
         set(svd_converter_bin ${build_dir}/svd_converter)
     else()
-        set(svd_converter_bin ${build_dir}/host_build/svd_converter)
+        get_target_property(svd_converter_bin svd_converter HOST_EXECUTABLE_PATH)
     endif()
 
     if(${PARSED_ARGS_GENERATOR} STREQUAL "kvasir_bit")
