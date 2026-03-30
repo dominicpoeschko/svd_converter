@@ -43,7 +43,7 @@ std::function<void(inja::json const&)> getRenderer(std::string const& outpath,
               "\"file_extension\" required");
         }
         return
-          [               =,
+          [=,
            file_extension = std::string{*std::next(argv, 1)},
            env = Generator::Custom::getEnvironment(argv[0])](inja::json const& peripheral) mutable {
               getOutStream(peripheral, file_extension)
