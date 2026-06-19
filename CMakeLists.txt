@@ -38,7 +38,7 @@ if(NOT CMAKE_CROSSCOMPILING)
         GIT_REPOSITORY
         https://github.com/zeux/pugixml
         GIT_TAG
-        v1.15
+        v1.16
         GIT_BRANCH
         master)
 
