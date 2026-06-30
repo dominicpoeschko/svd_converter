@@ -343,7 +343,7 @@ static constexpr FieldLocation<Addr,
                 throw std::runtime_error("hex failed");
             }
 
-            return std::format("0x{:0{}X}", number, width);
+            return std::vformat("0x{:0{}X}", std::make_format_args(number, width));
         });
 
         env.add_callback("dataType", 1, [](inja::Arguments& args) {
@@ -357,7 +357,7 @@ static constexpr FieldLocation<Addr,
 
             dataType.erase(0, 1);
 
-            return std::format("std::uint{}_t", dataType);
+            return std::vformat("std::uint{}_t", std::make_format_args(dataType));
         });
 
         env.add_callback("maxBitDataType", 1, [](inja::Arguments& args) {
