@@ -410,8 +410,7 @@ RegisterFromSVD(pugi::xml_node const& reg,
            || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToSet
            || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToToggle)
         {
-            registerResult.oneMask
-              = clearBits(registerResult.oneMask, fieldFromSvd.startBit, fieldFromSvd.stopBit);
+            registerResult.oneMask |= maskFromRange(fieldFromSvd.stopBit, fieldFromSvd.startBit);
         }
         registerResult.fields.push_back(std::move(fieldFromSvd));
     }
@@ -664,9 +663,9 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
 
         auto removePeripheralReg = [&](auto& reg) {
             removePeripheral(reg.name);
-            for(auto field_ref : reg.fields) {
+            for(auto& field_ref : reg.fields) {
                 removePeripheral(field_ref.name);
-                for(auto value_ref : field_ref.values) { removePeripheral(value_ref.name); }
+                for(auto& value_ref : field_ref.values) { removePeripheral(value_ref.name); }
             }
         };
         for(auto& register_ref : peripheral_ref.registers) { removePeripheralReg(register_ref); }
