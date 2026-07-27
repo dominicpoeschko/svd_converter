@@ -658,7 +658,9 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
         auto pname = peripheral_ref.name + "_";
 
         auto removePeripheral = [&](std::string& str_ref) {
-            if(str_ref.starts_with(pname)) { str_ref.erase(0, pname.size()); }
+            if(str_ref.starts_with(pname) && str_ref.size() > pname.size()) {
+                str_ref.erase(0, pname.size());
+            }
         };
 
         auto removePeripheralReg = [&](auto& reg) {
