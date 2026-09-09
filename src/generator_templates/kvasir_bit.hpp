@@ -14,6 +14,7 @@ namespace Generator { namespace Kvasir {
 #include "kvasir/Register/Types.hpp"
 #include "kvasir/Register/Utility.hpp"
 
+#include <array>
 #include <cstdint>
 #include <string_view>
 
@@ -105,9 +106,9 @@ struct {{ upper(register.name) }} {
         {% endif %}
     {% endfor %}
 
-    {% if length(register.fields) > 0 and allValidDefault(register) %}
+    {% if hasDefaults(register) %}
     using default_values = decltype(MPL::list(
-    {% for field in register.fields %}
+    {% for field in defaultFields(register) %}
         {% if field.type == "enum" %}
             {% if field.repType == "cluster" %}
                 {% for i in range(field.dim) %}
@@ -177,6 +178,36 @@ struct {{ upper(register.name) }} {
             \n{% set noNL=1 %}
         {% endif %}
     {% endfor %})"};
+
+    {% if length(register.fields) > 0 %}
+    // The fields again, as data: name and mask per field, in the order of fmt_string and
+    // apply_fields. A formatter can name a field with these without the register layout
+    // being restated anywhere else (Kvasir::Register::Flags in RegisterFmt.hpp does).
+    // Both are constant-expression only - indexed at compile time they cost no flash.
+    static constexpr auto field_names = std::to_array<std::string_view>({
+    {% for field in register.fields %}
+        {% if field.repType == "cluster" %}
+            {% for i in range(field.dim) %}
+                "{{ lower(field.name) }}[{{ i }}]",
+            {% endfor %}
+        {% else %}
+            "{{ lower(field.name) }}",
+        {% endif %}
+    {% endfor %}
+    });
+
+    static constexpr auto field_masks = std::to_array<unsigned>({
+    {% for field in register.fields %}
+        {% if field.repType == "cluster" %}
+            {% for i in range(field.dim) %}
+                {{ upper(field.name) }}<{{ i }}>::{{ lower(field.name) }}.Mask,
+            {% endfor %}
+        {% else %}
+            {{ lower(field.name) }}.Mask,
+        {% endif %}
+    {% endfor %}
+    });
+    {% endif %}
 
     template<typename Func>
     static constexpr auto apply_fields(Func&& func){
@@ -280,9 +311,17 @@ static constexpr FieldLocation<Addr,
                                {{ upper(field.name) }}Val>
     {{ lower(field.name) }}{};
 
+{# The field is named through its enclosing struct: a value with the field's own name
+   (SOURCE::clk_sys and CLK_SYSValC::clk_sys) would otherwise change the meaning of the
+   unqualified name inside ValC, which gcc 16 refuses (-Wchanges-meaning). #}
+{% if field.repType == "cluster" %}
+    {% set fieldOwner = upper(field.name) %}
+{% else %}
+    {% set fieldOwner = upper(register.name) %}
+{% endif %}
 struct {{ upper(field.name) }}ValC{
     {% for value in field.values %}
-    static constexpr FieldValue<typename decltype({{ lower(field.name) }})::type,
+    static constexpr FieldValue<typename decltype({{ fieldOwner }}::{{ lower(field.name) }})::type,
                                 {{ upper(field.name) }}Val::{{ lower(value.name) }}>
                                 {{ lower(value.name) }}{};
     {% endfor %}
@@ -392,10 +431,27 @@ static constexpr FieldLocation<Addr,
             return foundName;
         });
 
-        env.add_callback("allValidDefault", 1, [](inja::Arguments& args) {
-            auto reg = args.at(0)->get<Register>();
-
+        // The fields default_values writes: every writable one. A read-only field has no
+        // default to write (the hardware ignores it, and Register::write refuses it); its
+        // bits are in the Address's zero-ignored mask instead, so overrideDefaults still
+        // covers the register with one plain write.
+        env.add_callback("defaultFields", 1, [](inja::Arguments& args) {
+            auto       reg    = args.at(0)->get<Register>();
+            inja::json fields = inja::json::array();
             for(auto const& field : reg.fields) {
+                if(field.access != Access::readOnly) { fields.push_back(field); }
+            }
+            return fields;
+        });
+
+        // default_values exists when there is something to write and every enum field
+        // among them resets to one of its named values.
+        env.add_callback("hasDefaults", 1, [](inja::Arguments& args) {
+            auto reg      = args.at(0)->get<Register>();
+            bool anyField = false;
+            for(auto const& field : reg.fields) {
+                if(field.access == Access::readOnly) { continue; }
+                anyField   = true;
                 bool valid = false;
                 for(auto const& value : field.values) {
                     if(field.resetValue == value.value) {
@@ -406,7 +462,7 @@ static constexpr FieldLocation<Addr,
                 if(!valid && !field.values.empty()) { return false; }
             }
 
-            return true;
+            return anyField;
         });
 
         env.add_callback("makeAccess", 3, [](inja::Arguments& args) {

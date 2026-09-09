@@ -235,6 +235,41 @@ void testWriteMasks() {
     CHECK(reg.oneMask == 0x00003000, "oneMask covers zeroToClear bits");
 }
 
+// A read-only field ignores every write, so its bits stay in zeroMask the way reserved bits
+// do: a write of the register's other fields needs no read-modify-write for it. The field
+// itself is still emitted (it is readable), only default_values leaves it out.
+void testReadOnlyFieldMask() {
+    auto const  chip = parseChip(R"(
+        <peripheral>
+            <name>PERIA</name>
+            <baseAddress>0x40000000</baseAddress>
+            <registers>
+                <register>
+                    <name>STAT</name>
+                    <addressOffset>0x0</addressOffset>
+                    <fields>
+                        <field><name>EN</name><bitRange>[0:0]</bitRange></field>
+                        <field>
+                            <name>BUSY</name>
+                            <bitRange>[4:4]</bitRange>
+                            <access>read-only</access>
+                        </field>
+                        <field>
+                            <name>COUNT</name>
+                            <bitRange>[15:8]</bitRange>
+                            <access>read-only</access>
+                        </field>
+                    </fields>
+                </register>
+            </registers>
+        </peripheral>)");
+    auto const& reg  = chip.peripherals.front().registers.front();
+    CHECK(reg.fields.size() == 3, "read-only fields are kept");
+    CHECK(reg.fields[1].access == Access::readOnly, "read-only access parsed");
+    CHECK(reg.zeroMask == 0xFFFFFFFE, "zeroMask keeps read-only bits");
+    CHECK(reg.oneMask == 0x00000000, "oneMask untouched by read-only fields");
+}
+
 void testDerivedRegister() {
     auto const  chip      = parseChip(R"(
         <peripheral>
@@ -478,6 +513,26 @@ void testPeripheralPrefixStripping() {
     CHECK(reg.fields.front().name == "EN", "peripheral prefix stripped from field name");
     CHECK(reg.fields.front().values.front().name == "OFF",
           "peripheral prefix stripped from enum name");
+
+    // The RP2040's RTC has registers RTC_1 and RTC_0: stripping the prefix must not leave a
+    // bare digit behind.
+    auto const rtc = parseChip(R"(
+        <peripheral>
+            <name>RTC</name>
+            <baseAddress>0x4005C000</baseAddress>
+            <registers>
+                <register>
+                    <name>RTC_1</name>
+                    <addressOffset>0x18</addressOffset>
+                </register>
+                <register>
+                    <name>RTC_0</name>
+                    <addressOffset>0x1C</addressOffset>
+                </register>
+            </registers>
+        </peripheral>)");
+    CHECK(rtc.peripherals.front().registers[0].name == "_1", "stripped name with leading digit");
+    CHECK(rtc.peripherals.front().registers[1].name == "_0", "stripped name with leading digit");
 }
 
 void testErrors() {
@@ -543,6 +598,7 @@ int main() {
     testBasicParsing();
     testSizeOverrideAndDisplayName();
     testWriteMasks();
+    testReadOnlyFieldMask();
     testDerivedRegister();
     testDerivedPeripheral();
     testRegisterDim();

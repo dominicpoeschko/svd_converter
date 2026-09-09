@@ -4,6 +4,7 @@
 #include "svd_types.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <format>
 #include <map>
 #include <optional>
@@ -399,9 +400,14 @@ RegisterFromSVD(pugi::xml_node const& reg,
                                          modifiedWriteValues,
                                          readAction);
 
+        // zeroMask: the bits a write of zero leaves alone. Reserved bits, one-to-* fields
+        // (a zero is the no-op there) and read-only fields (any write is ignored) stay in
+        // it, so a register write that mentions none of them is still a plain write and
+        // not a read-modify-write.
         if(fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToClear
            && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToSet
-           && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToToggle)
+           && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToToggle
+           && fieldFromSvd.access != Access::readOnly)
         {
             registerResult.zeroMask
               = clearBits(registerResult.zeroMask, fieldFromSvd.startBit, fieldFromSvd.stopBit);
@@ -660,6 +666,11 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
         auto removePeripheral = [&](std::string& str_ref) {
             if(str_ref.starts_with(pname) && str_ref.size() > pname.size()) {
                 str_ref.erase(0, pname.size());
+                // RTC_1 -> 1 is no identifier: keep the underscore, as sanitizeName does for
+                // names that start with a digit.
+                if(std::isdigit(static_cast<unsigned char>(str_ref.front())) != 0) {
+                    str_ref.insert(str_ref.begin(), '_');
+                }
             }
         };
 
