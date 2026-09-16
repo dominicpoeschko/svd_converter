@@ -404,19 +404,34 @@ RegisterFromSVD(pugi::xml_node const& reg,
         // (a zero is the no-op there) and read-only fields (any write is ignored) stay in
         // it, so a register write that mentions none of them is still a plain write and
         // not a read-modify-write.
-        if(fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToClear
-           && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToSet
-           && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToToggle
-           && fieldFromSvd.access != Access::readOnly)
-        {
-            registerResult.zeroMask
-              = clearBits(registerResult.zeroMask, fieldFromSvd.startBit, fieldFromSvd.stopBit);
-        }
-        if(fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToClear
-           || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToSet
-           || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToToggle)
-        {
-            registerResult.oneMask |= maskFromRange(fieldFromSvd.stopBit, fieldFromSvd.startBit);
+        // startBit/stopBit describe element 0 of a dim field; the masks cover every element.
+        std::uint64_t const elements = fieldFromSvd.dim == 0 ? 1 : fieldFromSvd.dim;
+        for(std::uint64_t i = 0; i < elements; ++i) {
+            auto const start = fieldFromSvd.startBit + i * fieldFromSvd.dimIncrement;
+            auto const stop  = fieldFromSvd.stopBit + i * fieldFromSvd.dimIncrement;
+            // An element past the register's width is a broken SVD: its masks would be
+            // computed with shifts past the 64 bits they are held in.
+            if(stop >= DataTypeSize(registerResult.dataType)) {
+                throw std::runtime_error(
+                  std::format("field {} of register {} ends at bit {}, past the register's {} bits",
+                              fieldFromSvd.name,
+                              registerResult.name,
+                              stop,
+                              DataTypeSize(registerResult.dataType)));
+            }
+            if(fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToClear
+               && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToSet
+               && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToToggle
+               && fieldFromSvd.access != Access::readOnly)
+            {
+                registerResult.zeroMask = clearBits(registerResult.zeroMask, start, stop);
+            }
+            if(fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToClear
+               || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToSet
+               || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToToggle)
+            {
+                registerResult.oneMask |= maskFromRange(stop, start);
+            }
         }
         registerResult.fields.push_back(std::move(fieldFromSvd));
     }

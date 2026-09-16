@@ -235,6 +235,115 @@ void testWriteMasks() {
     CHECK(reg.oneMask == 0x00003000, "oneMask covers zeroToClear bits");
 }
 
+// Every element of a dim field leaves zeroMask; a one-to-* dim field stays in it.
+void testZeroMaskCoversDimFieldElements() {
+    auto const  chip = parseChip(R"(
+        <peripheral>
+            <name>NVIC</name>
+            <baseAddress>0xE000E100</baseAddress>
+            <registers>
+                <register>
+                    <name>IPR</name>
+                    <addressOffset>0x400</addressOffset>
+                    <fields>
+                        <field>
+                            <name>PRI_%s</name>
+                            <bitOffset>4</bitOffset>
+                            <bitWidth>4</bitWidth>
+                            <dim>4</dim>
+                            <dimIncrement>8</dimIncrement>
+                        </field>
+                    </fields>
+                </register>
+                <register>
+                    <name>ICER</name>
+                    <addressOffset>0x80</addressOffset>
+                    <fields>
+                        <field>
+                            <name>CLRENA_%s</name>
+                            <bitRange>[0:0]</bitRange>
+                            <dim>32</dim>
+                            <dimIncrement>1</dimIncrement>
+                            <modifiedWriteValues>oneToClear</modifiedWriteValues>
+                        </field>
+                    </fields>
+                </register>
+            </registers>
+        </peripheral>)");
+    auto const& regs = chip.peripherals.front().registers;
+    CHECK(regs[0].zeroMask == 0x0F0F0F0F, "every element of a dim field leaves zeroMask");
+    CHECK(regs[1].zeroMask == 0xFFFFFFFF, "a one-to-clear dim field stays in zeroMask whole");
+}
+
+// Every element of a zeroTo* dim field is in oneMask; a field past the register is rejected.
+void testDimFieldOneMaskAndWidth() {
+    auto const  chip = parseChip(R"(
+        <peripheral>
+            <name>FLAGS</name>
+            <baseAddress>0x40000000</baseAddress>
+            <registers>
+                <register>
+                    <name>ARM</name>
+                    <addressOffset>0x0</addressOffset>
+                    <fields>
+                        <field>
+                            <name>ARM_%s</name>
+                            <bitRange>[1:0]</bitRange>
+                            <dim>3</dim>
+                            <dimIncrement>4</dimIncrement>
+                            <modifiedWriteValues>zeroToClear</modifiedWriteValues>
+                        </field>
+                    </fields>
+                </register>
+            </registers>
+        </peripheral>)");
+    auto const& reg  = chip.peripherals.front().registers.front();
+    CHECK(reg.oneMask == 0x00000333, "every element of a zeroTo* dim field is in oneMask");
+    CHECK(reg.zeroMask == 0xFFFFFCCC, "and none of them in zeroMask");
+
+    CHECK_THROWS(parseChip(R"(
+        <peripheral>
+            <name>NVIC</name>
+            <baseAddress>0xE000E100</baseAddress>
+            <registers>
+                <register>
+                    <name>IPR</name>
+                    <addressOffset>0x400</addressOffset>
+                    <fields>
+                        <field>
+                            <name>PRI_%s</name>
+                            <bitOffset>4</bitOffset>
+                            <bitWidth>4</bitWidth>
+                            <dim>5</dim>
+                            <dimIncrement>8</dimIncrement>
+                        </field>
+                    </fields>
+                </register>
+            </registers>
+        </peripheral>)"),
+                 "a dim field whose fifth element is past the 32-bit register");
+
+    CHECK_THROWS(parseChip(R"(
+        <peripheral>
+            <name>PERI</name>
+            <baseAddress>0x40000000</baseAddress>
+            <registers>
+                <register>
+                    <name>SMALL</name>
+                    <addressOffset>0x0</addressOffset>
+                    <size>8</size>
+                    <fields>
+                        <field>
+                            <name>WIDE</name>
+                            <bitRange>[11:4]</bitRange>
+                        </field>
+                    </fields>
+                </register>
+            </registers>
+        </peripheral>)"),
+                 "a field past an 8-bit register");
+}
+
 // A read-only field ignores every write, so its bits stay in zeroMask the way reserved bits
 // do: a write of the register's other fields needs no read-modify-write for it. The field
 // itself is still emitted (it is readable), only default_values leaves it out.
@@ -599,6 +708,8 @@ int main() {
     testSizeOverrideAndDisplayName();
     testWriteMasks();
     testReadOnlyFieldMask();
+    testZeroMaskCoversDimFieldElements();
+    testDimFieldOneMaskAndWidth();
     testDerivedRegister();
     testDerivedPeripheral();
     testRegisterDim();
