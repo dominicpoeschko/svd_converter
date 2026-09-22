@@ -498,6 +498,10 @@ inline RegisterGroup RegisterGroupFromSVD(pugi::xml_node regg,
     return registerGroup;
 }
 
+// A cluster without <dim> is one of a peripheral's modes (SERCOM's USART / SPI / I2CM, USB's DEVICE /
+// HOST) and becomes a peripheral of its own, <PERIPHERAL>_<CLUSTER>. Its registers sit at the
+// cluster's addressOffset; a cluster with <dim> nested in it (USB DEVICE's DEVICE_ENDPOINT[8]) is
+// that peripheral's register group. The parent's own register groups are not the mode's.
 inline Peripheral ClusterFromSVD(pugi::xml_node    cluster,
                                  Peripheral const& peripheral_ref,
                                  Access            access,
@@ -507,7 +511,26 @@ inline Peripheral ClusterFromSVD(pugi::xml_node    cluster,
     peripheral.description
       += " " + sanitizeDescription(getDefaultSVD(cluster, "description", std::string{}));
 
+    auto const clusterOffset = getDefaultSVD(cluster, "addressOffset", std::uint64_t{0});
+
     peripheral.registers = makeRegister(cluster.children("register"), access, type);
+    for(auto& reg : peripheral.registers) { reg.addressOffset += clusterOffset; }
+
+    peripheral.registerGroups.clear();
+    for(auto const& nested : cluster.children("cluster")) {
+        if(nested.child("dim").empty()) {
+            std::print(stderr,
+                       "cluster {} in {} of {}: a cluster without dim inside a cluster is not "
+                       "supported, skipped\n",
+                       getDefaultSVD(nested, "name", std::string{"?"}),
+                       peripheral.name,
+                       peripheral_ref.name);
+            continue;
+        }
+        auto group = RegisterGroupFromSVD(nested, access, type);
+        group.addressOffset += clusterOffset;
+        peripheral.registerGroups.push_back(std::move(group));
+    }
 
     return peripheral;
 }

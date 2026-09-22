@@ -552,6 +552,127 @@ void testClusterWithoutDim() {
     CHECK(peripheral.registers.size() == 1, "split peripheral register count");
 }
 
+// The shape of Microchip's USB peripheral: two mode clusters without dim, and inside DEVICE the
+// endpoint registers as a cluster with dim.
+void testClusterNestedInCluster() {
+    auto const chip = parseChip(R"(
+        <peripheral>
+            <name>USB</name>
+            <baseAddress>0x41005000</baseAddress>
+            <registers>
+                <cluster>
+                    <name>DEVICE</name>
+                    <addressOffset>0x0</addressOffset>
+                    <register>
+                        <name>CTRLA</name>
+                        <addressOffset>0x0</addressOffset>
+                        <size>8</size>
+                        <fields>
+                            <field><name>ENABLE</name><bitRange>[1:1]</bitRange></field>
+                        </fields>
+                    </register>
+                    <cluster>
+                        <dim>8</dim>
+                        <dimIncrement>0x20</dimIncrement>
+                        <name>DEVICE_ENDPOINT[%s]</name>
+                        <addressOffset>0x100</addressOffset>
+                        <register>
+                            <name>EPCFG</name>
+                            <addressOffset>0x0</addressOffset>
+                            <size>8</size>
+                            <fields>
+                                <field><name>EPTYPE0</name><bitRange>[2:0]</bitRange></field>
+                            </fields>
+                        </register>
+                        <register>
+                            <name>EPSTATUSSET</name>
+                            <addressOffset>0x5</addressOffset>
+                            <size>8</size>
+                            <fields>
+                                <field><name>BK0RDY</name><bitRange>[6:6]</bitRange></field>
+                            </fields>
+                        </register>
+                    </cluster>
+                </cluster>
+                <cluster>
+                    <name>HOST</name>
+                    <addressOffset>0x0</addressOffset>
+                    <register>
+                        <name>CTRLA</name>
+                        <addressOffset>0x0</addressOffset>
+                        <size>8</size>
+                        <fields>
+                            <field><name>ENABLE</name><bitRange>[1:1]</bitRange></field>
+                        </fields>
+                    </register>
+                </cluster>
+            </registers>
+        </peripheral>)");
+    CHECK(chip.peripherals.size() == 2, "both mode clusters split into peripherals");
+    auto const find = [&](std::string_view name) -> Peripheral const* {
+        for(auto const& p : chip.peripherals) {
+            if(p.name == name) { return &p; }
+        }
+        return nullptr;
+    };
+    auto const* device = find("USB_DEVICE");
+    auto const* host   = find("USB_HOST");
+    CHECK(device != nullptr && host != nullptr, "named USB_DEVICE and USB_HOST");
+    if(device == nullptr || host == nullptr) { return; }
+    CHECK(device->registers.size() == 1, "the mode's own registers");
+    CHECK(device->registerGroups.size() == 1, "nested dim cluster becomes its register group");
+    auto const& group = device->registerGroups.front();
+    CHECK(group.name == "DEVICE_ENDPOINT", "nested group placeholder removed");
+    CHECK(group.dim == 8, "nested group dim");
+    CHECK(group.dimIncrement == 0x20, "nested group increment");
+    CHECK(group.addressOffset == 0x100, "nested group offset");
+    CHECK(group.registers.size() == 2, "nested group registers");
+    CHECK(host->registerGroups.empty(), "the sibling mode does not get DEVICE's group");
+}
+
+// A mode cluster that does not start at the peripheral's base: its registers, and a group nested
+// in it, move with it.
+void testClusterAddressOffset() {
+    auto const chip = parseChip(R"(
+        <peripheral>
+            <name>PARENT</name>
+            <baseAddress>0xA0000000</baseAddress>
+            <registers>
+                <cluster>
+                    <name>SUB</name>
+                    <addressOffset>0x40</addressOffset>
+                    <register>
+                        <name>CTRL</name>
+                        <addressOffset>0x8</addressOffset>
+                        <fields>
+                            <field><name>EN</name><bitRange>[0:0]</bitRange></field>
+                        </fields>
+                    </register>
+                    <cluster>
+                        <dim>2</dim>
+                        <dimIncrement>0x10</dimIncrement>
+                        <name>CH[%s]</name>
+                        <addressOffset>0x20</addressOffset>
+                        <register>
+                            <name>CFG</name>
+                            <addressOffset>0x0</addressOffset>
+                            <fields>
+                                <field><name>EN</name><bitRange>[0:0]</bitRange></field>
+                            </fields>
+                        </register>
+                    </cluster>
+                </cluster>
+            </registers>
+        </peripheral>)");
+    CHECK(chip.peripherals.size() == 1, "one split peripheral");
+    auto const& peripheral = chip.peripherals.front();
+    CHECK(peripheral.registers.size() == 1 && peripheral.registers.front().addressOffset == 0x48,
+          "register offset includes the cluster's");
+    CHECK(peripheral.registerGroups.size() == 1
+            && peripheral.registerGroups.front().addressOffset == 0x60,
+          "nested group offset includes the cluster's");
+}
+
 void testEnumValues() {
     auto const  chip  = parseChip(R"(
         <peripheral>
@@ -715,6 +836,8 @@ int main() {
     testRegisterDim();
     testClusterWithDim();
     testClusterWithoutDim();
+    testClusterNestedInCluster();
+    testClusterAddressOffset();
     testEnumValues();
     testPeripheralPrefixStripping();
     testErrors();
