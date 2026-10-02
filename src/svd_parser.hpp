@@ -321,7 +321,9 @@ inline Field FieldFromSVD(pugi::xml_node const& field,
         fieldResult.values.emplace_back(ValueFromSVD(enumValueNode));
     }
 
-    bool found = false;
+    // A write-only field has no value to read back after reset (the RP2350 POWMAN PASSWORD key
+    // reads 0, its one enumerated value is 0x5AFE): nothing to check.
+    bool found = fieldResult.access == Access::writeOnly;
     for(auto const& enumValue : fieldResult.values) {
         if(enumValue.value == fieldResult.resetValue) {
             found = true;
@@ -458,14 +460,9 @@ RegisterFromSVD(pugi::xml_node const& reg,
     }
 
     auto fields = reg.child("fields");
-    if(fields.empty()) {
-        std::string const peripheral_name = reg.parent().parent().child("name").text().as_string();
-        std::string const device_name
-          = reg.parent().parent().parent().child("name").text().as_string();
-        auto parent = peripheral_name.empty() ? device_name : peripheral_name;
-        std::print(stderr, "no fields in {}::{}\n", parent, registerResult.name);
-        return registerResult;
-    }
+    // No fields is valid SVD: the register is one value (RP USB_DPRAM buffers), reached through
+    // the generated FULLREGISTER.
+    if(fields.empty()) { return registerResult; }
 
     for(auto const& field_node : fields.children("field")) {
         auto fieldFromSvd = FieldFromSVD(field_node,
@@ -620,7 +617,10 @@ PeripheralFromSVD(pugi::xml_node const& peripheral,
 
     auto registers = peripheral.child("registers");
     if(registers.empty()) {
-        std::print(stderr, "no registers in {}\n", peripheral_result.name);
+        // A peripheral that only names interrupts (RP2350 SPARE_IRQ) has no registers on purpose.
+        if(peripheral.child("interrupt").empty()) {
+            std::print(stderr, "no registers in {}\n", peripheral_result.name);
+        }
         return peripheral_result;
     }
 
