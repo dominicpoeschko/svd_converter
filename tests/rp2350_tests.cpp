@@ -14,6 +14,16 @@
 #include <string_view>
 #include <vector>
 
+// The returned pointer refers into this argument: lets clang's lifetime analysis see a dangling use.
+#if defined(__has_cpp_attribute)
+    #if __has_cpp_attribute(clang::lifetimebound)
+        #define LIFETIMEBOUND [[clang::lifetimebound]]
+    #endif
+#endif
+#ifndef LIFETIMEBOUND
+    #define LIFETIMEBOUND
+#endif
+
 namespace {
 
 int failures = 0;
@@ -26,7 +36,7 @@ int failures = 0;
         }                                                       \
     } while(0)
 
-Peripheral const* findPeripheral(Chip const&      chip,
+Peripheral const* findPeripheral(Chip const& chip LIFETIMEBOUND,
                                  std::string_view name) {
     for(auto const& peripheral : chip.peripherals) {
         if(peripheral.name == name) { return &peripheral; }
@@ -34,16 +44,16 @@ Peripheral const* findPeripheral(Chip const&      chip,
     return nullptr;
 }
 
-Register const* findRegister(std::vector<Register> const& registers,
-                             std::string_view             name) {
+Register const* findRegister(std::vector<Register> const& registers LIFETIMEBOUND,
+                             std::string_view                       name) {
     for(auto const& reg : registers) {
         if(reg.name == name) { return &reg; }
     }
     return nullptr;
 }
 
-Field const* findField(Register const&  reg,
-                       std::string_view name) {
+Field const* findField(Register const& reg LIFETIMEBOUND,
+                       std::string_view    name) {
     for(auto const& field : reg.fields) {
         if(field.name == name) { return &field; }
     }
