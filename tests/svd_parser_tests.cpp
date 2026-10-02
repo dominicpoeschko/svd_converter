@@ -818,7 +818,50 @@ void testErrors() {
 
 }   // namespace
 
+// Write semantics from standard SVD elements: a self-clearing trigger written oneToSet joins
+// zeroMask, a writeConstraint range of one value is a key (RmwHazard's MustSupply), a readAction
+// makes the register's read a side effect; a range of several values and SVD `clear` change nothing.
+static void testWriteSemantics() {
+    auto const  xml  = R"(
+        <peripheral>
+            <name>PERIA</name>
+            <baseAddress>0x40000000</baseAddress>
+            <registers>
+                <register>
+                    <name>CTRL</name>
+                    <addressOffset>0x0</addressOffset>
+                    <fields>
+                        <field><name>EN</name><bitRange>[0:0]</bitRange></field>
+                        <field><name>GO</name><bitRange>[1:1]</bitRange><access>write-only</access>
+                            <modifiedWriteValues>oneToSet</modifiedWriteValues></field>
+                        <field><name>LOAD</name><bitRange>[2:2]</bitRange>
+                            <modifiedWriteValues>clear</modifiedWriteValues></field>
+                        <field><name>DIV</name><bitRange>[11:8]</bitRange>
+                            <writeConstraint><range><minimum>1</minimum><maximum>9</maximum></range></writeConstraint></field>
+                        <field><name>KEY</name><bitRange>[31:16]</bitRange>
+                            <writeConstraint><range><minimum>0x05FA</minimum><maximum>0x05FA</maximum></range></writeConstraint></field>
+                    </fields>
+                </register>
+                <register>
+                    <name>DATA</name>
+                    <addressOffset>0x4</addressOffset>
+                    <fields><field><name>DAT</name><bitRange>[7:0]</bitRange>
+                        <readAction>modify</readAction></field></fields>
+                </register>
+            </registers>
+        </peripheral>)";
+    Chip const  chip = parseChip(xml);
+    auto const& ctrl = chip.peripherals.front().registers[0];
+    auto const& data = chip.peripherals.front().registers[1];
+    CHECK(ctrl.zeroMask == 0x0000F0FA, "the oneToSet trigger joins zeroMask, `clear` does not");
+    CHECK(ctrl.fields[1].identity == "zero" && ctrl.fields[2].identity == "none", "identities");
+    CHECK(ctrl.mustSupplyMask == 0xFFFF0000, "only the one-value range is a key");
+    CHECK(!ctrl.readHasSideEffect, "no readAction in CTRL");
+    CHECK(data.readHasSideEffect && data.mustSupplyMask == 0, "DATA's read pops");
+}
+
 int main() {
+    testWriteSemantics();
     testMasks();
     testNumberParsing();
     testBitRangeParsing();

@@ -94,9 +94,12 @@ struct {{ upper(register.name) }} {
                             {% endif %},
                         {{ hex(register.zeroMask, register.dataType) }},
                         {{ hex(register.oneMask, register.dataType) }},
-                        {{ dataType(register.dataType) }}>;
+                        {{ dataType(register.dataType) }}
+                        {% if register.mustSupplyMask != 0 or register.readHasSideEffect %}
+                        , Kvasir::Register::RmwHazard<{{ hex(register.mustSupplyMask, register.dataType) }}, {{ register.readHasSideEffect }}>
+                        {% endif %}>;
 
-    static constexpr FieldLocation<Addr, maskFromRange({{maxBitDataType(register.dataType) }}, 0), ReadWriteAccess, {{ dataType(register.dataType) }}> FULLREGISTER{};
+    static constexpr FieldLocation<Addr, maskFromRange({{maxBitDataType(register.dataType) }}, 0), {{ makeAccess(register.access, "empty", "") }}, {{ dataType(register.dataType) }}> FULLREGISTER{};
 
     {% for field in register.fields %}
         {% if field.type == "enum" %}
@@ -207,6 +210,24 @@ struct {{ upper(register.name) }} {
         {% endif %}
     {% endfor %}
     });
+
+    // What each field can be written as without changing it (svd_converter identityOf), for
+    // Kvasir::Register::Detail::masksMatchFields: the register's masks must follow from these.
+    static constexpr auto field_identities = std::to_array<Kvasir::Register::Detail::Identity>({
+    {% for field in register.fields %}
+        {% if field.repType == "cluster" %}
+            {% for i in range(field.dim) %}
+                Kvasir::Register::Detail::Identity::{{ field.identity }},
+            {% endfor %}
+        {% else %}
+            Kvasir::Register::Detail::Identity::{{ field.identity }},
+        {% endif %}
+    {% endfor %}
+    });
+#ifdef KVASIR_REGISTER_VERIFY_MASKS
+    static_assert(Kvasir::Register::Detail::masksMatchFields<Addr>(field_masks, field_identities),
+                  "the register's write-ignored masks do not follow from its fields");
+#endif
     {% endif %}
 
     template<typename Func>
@@ -465,10 +486,25 @@ static constexpr FieldLocation<Addr,
             return anyField;
         });
 
+        // The field's full write semantics. The plain kinds keep their short names (most fields;
+        // the generated headers stay readable), everything else is the fully qualified Access<>,
+        // so a peripheral with something called Access in scope cannot capture it.
         env.add_callback("makeAccess", 3, [](inja::Arguments& args) {
-            auto accessString = args.at(0)->get<std::string>();
-            accessString[0]   = static_cast<char>(std::toupper(accessString[0]));
-            return accessString + "Access";
+            auto const access = args.at(0)->get<std::string>();   // "readWrite", ...
+            auto const mwv    = args.at(1)->get<std::string>();   // "empty", "oneToClear", ...
+            auto const ra     = args.at(2)->get<std::string>();   // "", "clear", ...
+            if(mwv == "empty" && ra.empty()
+               && (access == "readWrite" || access == "readOnly" || access == "writeOnly"))
+            {
+                auto s = access;
+                s[0]   = static_cast<char>(std::toupper(s[0]));
+                return s + "Access";
+            }
+            return "Kvasir::Register::Access<Kvasir::Register::AccessType::" + access
+                 + ", Kvasir::Register::ReadActionType::"
+                 + (ra.empty() ? std::string{"normal"} : ra)
+                 + ", Kvasir::Register::ModifiedWriteValueType::"
+                 + (mwv == "empty" ? std::string{"normal"} : mwv) + ">";
         });
 
         env.include_template("RegisterGroup", env.parse(RegisterGroupTemplate));

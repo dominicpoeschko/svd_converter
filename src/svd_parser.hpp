@@ -292,6 +292,11 @@ inline Field FieldFromSVD(pugi::xml_node const& field,
     fieldResult.modifiedWriteValues
       = getDefaultSVD(field, "modifiedWriteValues", modifiedWriteValues);
     fieldResult.readAction = getDefaultSVD(field, "readAction", readAction);
+    // A writeConstraint range of one value: every write of the register must carry it (a key).
+    if(auto const range = field.child("writeConstraint").child("range"); !range.empty()) {
+        fieldResult.key = getCheckedSVD<std::uint64_t>(range, "minimum", "writeConstraint")
+                       == getCheckedSVD<std::uint64_t>(range, "maximum", "writeConstraint");
+    }
 
     if(!field.child("dim").empty()) {
         fieldResult.dim          = getCheckedSVD<std::uint64_t>(field, "dim", "Field");
@@ -338,6 +343,76 @@ inline Field FieldFromSVD(pugi::xml_node const& field,
     }
 
     return fieldResult;
+}
+
+enum class Identity : std::uint8_t { none, zero, one };
+
+// What can be written to a field without changing it. The same table is
+// Kvasir::Register::Detail::identityOf in the SDK (Register/Utility.hpp); keep the two in step.
+// SVD `clear`/`set` (any write clears/sets the field) stays `none`: the RP2040's SVD marks its
+// self-clearing triggers that way, but also I2C IC_DATA_CMD's CMD/STOP/RESTART, where a 0 is a
+// value. A self-clearing trigger whose 0 does nothing is written `oneToSet` in the SVD.
+constexpr Identity identityOf(Access              a,
+                              ModifiedWriteValues m) {
+    using M = ModifiedWriteValues;
+    if(a == Access::readOnly) { return Identity::zero; }
+    switch(m) {
+    case M::oneToClear:
+    case M::oneToSet:
+    case M::oneToToggle:  return Identity::zero;
+    case M::zeroToClear:
+    case M::zeroToSet:
+    case M::zeroToToggle: return Identity::one;
+    case M::empty:
+    case M::clear:
+    case M::set:
+    case M::modify:       return Identity::none;
+    }
+    return Identity::none;
+}
+
+constexpr std::string_view identityName(Identity i) {
+    switch(i) {
+    case Identity::zero: return "zero";
+    case Identity::one:  return "one";
+    case Identity::none: return "none";
+    }
+    return "none";
+}
+
+// The register's write-ignored masks from its fields. zeroMask: the bits a write of zero leaves
+// alone - reserved bits, fields with identity zero (one-to-* flags, read-only fields). oneMask: the
+// bits a write of one leaves alone - zero-to-* fields. Both disjoint. A partial write that covers
+// every bit outside them needs no read. Also the register's RmwHazard: the bits of its key fields
+// (mustSupplyMask) and whether any field's read has a side effect (a readAction).
+inline void computeMasks(Register& r) {
+    r.zeroMask          = maskFromRange(DataTypeSize(r.dataType) - 1, 0);
+    r.oneMask           = 0;
+    r.mustSupplyMask    = 0;
+    r.readHasSideEffect = false;
+    bool allReadOnly    = !r.fields.empty();
+    for(auto& f : r.fields) {
+        auto const id       = identityOf(f.access, f.modifiedWriteValues);
+        f.identity          = identityName(id);
+        allReadOnly         = allReadOnly && f.access == Access::readOnly;
+        r.readHasSideEffect = r.readHasSideEffect || f.readAction != ReadAction::empty;
+        // startBit/stopBit describe element 0 of a dim field; the masks cover every element.
+        std::uint64_t const elements = f.dim == 0 ? 1 : f.dim;
+        for(std::uint64_t i = 0; i < elements; ++i) {
+            auto const start = f.startBit + i * f.dimIncrement;
+            auto const stop  = f.stopBit + i * f.dimIncrement;
+            if(f.key) { r.mustSupplyMask |= maskFromRange(stop, start); }
+            switch(id) {
+            case Identity::none: r.zeroMask = clearBits(r.zeroMask, start, stop); break;
+            case Identity::one:
+                r.zeroMask = clearBits(r.zeroMask, start, stop);
+                r.oneMask |= maskFromRange(stop, start);
+                break;
+            case Identity::zero: break;   // stays in zeroMask
+            }
+        }
+    }
+    r.access = allReadOnly ? Access::readOnly : Access::readWrite;
 }
 
 inline std::variant<Register,
@@ -400,42 +475,22 @@ RegisterFromSVD(pugi::xml_node const& reg,
                                          modifiedWriteValues,
                                          readAction);
 
-        // zeroMask: the bits a write of zero leaves alone. Reserved bits, one-to-* fields
-        // (a zero is the no-op there) and read-only fields (any write is ignored) stay in
-        // it, so a register write that mentions none of them is still a plain write and
-        // not a read-modify-write.
-        // startBit/stopBit describe element 0 of a dim field; the masks cover every element.
+        // An element past the register's width is a broken SVD: its masks would be computed
+        // with shifts past the 64 bits they are held in.
         std::uint64_t const elements = fieldFromSvd.dim == 0 ? 1 : fieldFromSvd.dim;
-        for(std::uint64_t i = 0; i < elements; ++i) {
-            auto const start = fieldFromSvd.startBit + i * fieldFromSvd.dimIncrement;
-            auto const stop  = fieldFromSvd.stopBit + i * fieldFromSvd.dimIncrement;
-            // An element past the register's width is a broken SVD: its masks would be
-            // computed with shifts past the 64 bits they are held in.
-            if(stop >= DataTypeSize(registerResult.dataType)) {
-                throw std::runtime_error(
-                  std::format("field {} of register {} ends at bit {}, past the register's {} bits",
-                              fieldFromSvd.name,
-                              registerResult.name,
-                              stop,
-                              DataTypeSize(registerResult.dataType)));
-            }
-            if(fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToClear
-               && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToSet
-               && fieldFromSvd.modifiedWriteValues != ModifiedWriteValues::oneToToggle
-               && fieldFromSvd.access != Access::readOnly)
-            {
-                registerResult.zeroMask = clearBits(registerResult.zeroMask, start, stop);
-            }
-            if(fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToClear
-               || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToSet
-               || fieldFromSvd.modifiedWriteValues == ModifiedWriteValues::zeroToToggle)
-            {
-                registerResult.oneMask |= maskFromRange(stop, start);
-            }
+        auto const lastStop = fieldFromSvd.stopBit + (elements - 1) * fieldFromSvd.dimIncrement;
+        if(lastStop >= DataTypeSize(registerResult.dataType)) {
+            throw std::runtime_error(
+              std::format("field {} of register {} ends at bit {}, past the register's {} bits",
+                          fieldFromSvd.name,
+                          registerResult.name,
+                          lastStop,
+                          DataTypeSize(registerResult.dataType)));
         }
         registerResult.fields.push_back(std::move(fieldFromSvd));
     }
 
+    computeMasks(registerResult);
     return registerResult;
 }
 

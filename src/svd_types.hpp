@@ -141,7 +141,12 @@ struct Field {
     Access              access              = Access::readWrite;
     ModifiedWriteValues modifiedWriteValues = ModifiedWriteValues::empty;
     ReadAction          readAction          = ReadAction::empty;
-    std::vector<Value>  values;
+    // a key: the SVD's writeConstraint allows one value only (AIRCR.VECTKEY), so every write of
+    // the register must carry it - Register::RmwHazard's MustSupply
+    bool key = false;
+    // what can be written without changing the field: "none", "zero" or "one" (identityOf)
+    std::string        identity = "none";
+    std::vector<Value> values;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Field,
                                    name,
                                    description,
@@ -156,20 +161,28 @@ struct Field {
                                    access,
                                    modifiedWriteValues,
                                    readAction,
+                                   key,
+                                   identity,
                                    values)
 };
 
 struct Register {
-    std::string        name;
-    std::string        description;
-    RepeatType         type          = RepeatType::normal;
-    std::uint64_t      dim           = 0;
-    std::uint64_t      dimIncrement  = 0;
-    DataType           dataType      = DataType::u32;
-    std::uint64_t      addressOffset = 0;
-    std::uint64_t      resetValue    = 0;
-    std::uint64_t      zeroMask      = 0;
-    std::uint64_t      oneMask       = 0;
+    std::string   name;
+    std::string   description;
+    RepeatType    type          = RepeatType::normal;
+    std::uint64_t dim           = 0;
+    std::uint64_t dimIncrement  = 0;
+    DataType      dataType      = DataType::u32;
+    std::uint64_t addressOffset = 0;
+    std::uint64_t resetValue    = 0;
+    std::uint64_t zeroMask      = 0;
+    std::uint64_t oneMask       = 0;
+    // FULLREGISTER's access: readOnly when every field is, readWrite otherwise
+    Access access = Access::readWrite;
+    // Register::RmwHazard: the key fields' bits every write must supply, and whether a read has a
+    // side effect (a field with a readAction) - from the SVD (computeMasks)
+    std::uint64_t      mustSupplyMask    = 0;
+    bool               readHasSideEffect = false;
     std::vector<Field> fields;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Register,
                                    name,
@@ -182,6 +195,9 @@ struct Register {
                                    resetValue,
                                    zeroMask,
                                    oneMask,
+                                   access,
+                                   mustSupplyMask,
+                                   readHasSideEffect,
                                    fields)
 };
 
