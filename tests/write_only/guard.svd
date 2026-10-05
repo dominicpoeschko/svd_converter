@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The write-only guard's CLI test (tests/CMakeLists.txt): TC.CTRLA.SWRST is unclassified, its
+     neighbour RTC.CTRL.SWRST is accepted, EVSYS.SWEVT has no readable field. -->
+<device>
+  <name>GUARDCHIP</name>
+  <width>32</width>
+  <size>32</size>
+  <access>read-write</access>
+  <peripherals>
+    <peripheral>
+      <name>TC</name>
+      <baseAddress>0x42002C00</baseAddress>
+      <registers>
+        <register>
+          <name>CTRLA</name>
+          <addressOffset>0x0</addressOffset>
+          <fields>
+            <field><name>SWRST</name><bitRange>[0:0]</bitRange><access>write-only</access></field>
+            <field><name>ENABLE</name><bitRange>[1:1]</bitRange></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>RTC</name>
+      <baseAddress>0x40001400</baseAddress>
+      <registers>
+        <register>
+          <name>CTRL</name>
+          <addressOffset>0x0</addressOffset>
+          <fields>
+            <field><name>SWRST</name><bitRange>[0:0]</bitRange><access>write-only</access>
+              <!-- Kvasir: write-only accepted: the CLI test's accepted field --></field>
+            <field><name>ENABLE</name><bitRange>[1:1]</bitRange></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>EVSYS</name>
+      <baseAddress>0x42000400</baseAddress>
+      <registers>
+        <register>
+          <name>SWEVT</name>
+          <addressOffset>0xC</addressOffset>
+          <fields>
+            <field><name>CHANNEL0</name><bitRange>[0:0]</bitRange><access>write-only</access></field>
+            <field><name>CHANNEL1</name><bitRange>[1:1]</bitRange><access>write-only</access></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>

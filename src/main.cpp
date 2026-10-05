@@ -4,6 +4,7 @@
 #include "svd_parser.hpp"
 
 #include <exception>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <functional>
@@ -12,6 +13,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -53,17 +55,102 @@ std::function<void(inja::json const&)> getRenderer(std::string const& outpath,
 
     throw std::runtime_error("bad generator");
 }
+
+// Options before the positional arguments: --write-only-guard=off|warn|error,
+// --write-only-registers=derived|off, --write-only-mask[=on|off], --named-registers[=on|off].
+ConvertOptions parseOptions(int&                argc,
+                            char const* const*& argv) {
+    ConvertOptions options;
+    while(argc > 1 && std::string_view{*std::next(argv, 1)}.starts_with("--")) {
+        std::string_view const arg = *std::next(argv, 1);
+        auto const             eq  = arg.find('=');
+        auto const             key = arg.substr(0, eq);
+        auto const value = eq == std::string_view::npos ? std::string_view{} : arg.substr(eq + 1);
+        if(key == "--write-only-guard") {
+            if(value == "off") {
+                options.guard = WriteOnlyGuard::off;
+            } else if(value == "warn") {
+                options.guard = WriteOnlyGuard::warn;
+            } else if(value == "error") {
+                options.guard = WriteOnlyGuard::error;
+            } else {
+                throw std::runtime_error(std::format("bad {}: off, warn or error", arg));
+            }
+        } else if(key == "--write-only-registers") {
+            if(value == "derived") {
+                options.writeOnlyRegisters = WriteOnlyRegisters::derived;
+            } else if(value == "off") {
+                options.writeOnlyRegisters = WriteOnlyRegisters::off;
+            } else {
+                throw std::runtime_error(std::format("bad {}: derived or off", arg));
+            }
+        } else if(key == "--write-only-mask") {
+            if(value.empty() || value == "on" || value == "ON") {
+                options.writeOnlyMask = true;
+            } else if(value == "off" || value == "OFF") {
+                options.writeOnlyMask = false;
+            } else {
+                throw std::runtime_error(std::format("bad {}: on or off", arg));
+            }
+        } else if(key == "--named-registers") {
+            if(value.empty() || value == "on" || value == "ON") {
+                options.namedRegisters = true;
+            } else if(value == "off" || value == "OFF") {
+                options.namedRegisters = false;
+            } else {
+                throw std::runtime_error(std::format("bad {}: on or off", arg));
+            }
+        } else {
+            throw std::runtime_error(std::format("unknown option {}", arg));
+        }
+        --argc;
+        argv = std::next(argv);
+    }
+    return options;
+}
+
+// The findings on stderr, one line each, and a summary; true when the build has to stop.
+bool reportWriteOnly(std::string const&                   svdfile,
+                     ConvertOptions const&                options,
+                     std::vector<WriteOnlyFinding> const& findings) {
+    if(options.guard == WriteOnlyGuard::off || findings.empty()) { return false; }
+    auto const name = std::filesystem::path{svdfile}.filename().string();
+    for(auto const& finding : findings) {
+        std::print(stderr, "svd_converter: {}: {}\n", name, describe(finding));
+    }
+    std::size_t registers = 0;
+    for(std::size_t i = 0; i < findings.size(); ++i) {
+        bool const sameRegister = i != 0 && findings[i].where == findings[i - 1].where
+                               && findings[i].reg == findings[i - 1].reg;
+        if(!sameRegister) { ++registers; }
+    }
+    std::print(
+      stderr,
+      "svd_converter: {}: {} write-only field(s) in {} register(s) unclassified "
+      "(--write-only-guard={}). Classify each in the SVD: "
+      "<modifiedWriteValues>oneToSet</modifiedWriteValues> (a 0 does nothing), a one-value "
+      "<writeConstraint> (a key), or <!-- Kvasir: write-only accepted: <why, datasheet "
+      "line> -->\n",
+      name,
+      findings.size(),
+      registers,
+      options.guard == WriteOnlyGuard::error ? "error" : "warn");
+    return options.guard == WriteOnlyGuard::error;
+}
 }   // namespace
 
 int main(int                argc,
          char const* const* argv) {
     try {
         using inja::json;
+        auto const options = parseOptions(argc, argv);
         if(argc < 4) {
             throw std::runtime_error(
-              "wrong args use with \"svdfile\" \"outpath\" \"generator\""
-              " \"[<template path for custom_template>]\""
-              " \"[<file extension for custom_template>]\"");
+              "wrong args use with [--write-only-guard=off|warn|error] "
+              "[--write-only-registers=derived|off] [--write-only-mask] [--named-registers] "
+              "\"svdfile\" \"outpath\" "
+              "\"generator\" \"[<template path for custom_template>]\" "
+              "\"[<file extension for custom_template>]\"");
         }
         std::string const svdfile   = *std::next(argv, 1);
         std::string const outpath   = *std::next(argv, 2);
@@ -74,20 +161,36 @@ int main(int                argc,
         }
 
         pugi::xml_document doc;
-        if(!doc.load_file(svdfile.c_str())) {
+        // comments: the `<!-- Kvasir: write-only accepted -->` marker is one
+        if(!doc.load_file(svdfile.c_str(), pugi::parse_default | pugi::parse_comments)) {
             throw std::runtime_error("svdfile not found or invalid");
         }
 
         auto device = doc.child("device");
         if(device.empty()) { throw std::runtime_error("device empty"); }
 
-        inja::json chip = ChipFromSVD(device);
+        std::vector<WriteOnlyFinding> findings;
+        inja::json                    chip = ChipFromSVD(device, options, &findings);
 
         auto render = getRenderer(outpath, generator, argc - 4, std::next(argv, 4));
 
-        for(auto const& peripheral : chip["peripherals"]) { render(peripheral); }
+        // Rendered whatever the guard says: the headers are there to look at.
+        for(auto& peripheral : chip["peripherals"]) {
+            // the templates' switch; the json generator writes the model alone
+            if(generator != "json") {
+                peripheral["writeOnlyMask"]  = options.writeOnlyMask;
+                peripheral["namedRegisters"] = options.namedRegisters;
+            }
+            render(peripheral);
+        }
+        // the vectors' names for compile errors (Kvasir_SDK StartUp diagnostics): a chip SVD has them, a core's not
+        if(generator == "kvasir_bit" && !chip["interrupts"].empty()) {
+            auto env = Generator::Kvasir::getEnvironment();
+            std::ofstream{std::format("{}/InterruptNames.hpp", outpath)}
+              << env.render(Generator::Kvasir::InterruptNamesTemplate, chip);
+        }
 
-        return 0;
+        return reportWriteOnly(svdfile, options, findings) ? 2 : 0;
     } catch(std::exception const& exception) {
         std::print(stderr, "caught {}\n", exception.what());
         return 1;

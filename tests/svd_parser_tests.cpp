@@ -3,12 +3,19 @@
 // derived peripherals, clusters, enums and error handling.
 #include "svd_parser.hpp"
 
+#include "generator_templates/kvasir_bit.hpp"
+
+#include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <format>
 #include <pugixml.hpp>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -27,9 +34,7 @@ int failures = 0;
         bool caught = false;                                                  \
         try {                                                                 \
             (void)(expr);                                                     \
-        } catch(std::exception const&) {                                      \
-            caught = true;                                                    \
-        }                                                                     \
+        } catch(std::exception const&) { caught = true; }                     \
         if(!caught) {                                                         \
             std::printf("FAIL: %s did not throw (line %d)\n", msg, __LINE__); \
             ++failures;                                                       \
@@ -452,6 +457,67 @@ void testDerivedPeripheral() {
           "instance 1 address");
 }
 
+// The derived peripheral shapes of ST's SVDs (STM32F413.svd V2.0): the base is not instance 0,
+// port letters, a family with its own stem derived from another, and two groups with one stem.
+void testDerivedPeripheralInstanceNames() {
+    auto const peripheral
+      = [](std::string_view name, std::string_view address, std::string_view base = {}) {
+            std::string xml = base.empty() ? "<peripheral>"
+                                           : std::format("<peripheral derivedFrom=\"{}\">", base);
+            xml += std::format("<name>{}</name><baseAddress>{}</baseAddress>", name, address);
+            if(base.empty()) {
+                xml += "<registers><register><name>SR</name><addressOffset>0x0</addressOffset>"
+                   "<fields><field><name>F</name><bitRange>[0:0]</bitRange></field></fields>"
+                   "</register></registers>";
+            }
+            return xml + "</peripheral>";
+        };
+    auto const chip = parseChip(
+      peripheral("USART3", "0x40004800") + peripheral("UART4", "0x40004C00", "USART3")
+      + peripheral("USART1", "0x40011000", "USART3") + peripheral("UART10", "0x40011C00", "USART3")
+      + peripheral("GPIOF", "0x40021400") + peripheral("GPIOC", "0x40020800", "GPIOF")
+      + peripheral("GPIOH", "0x40021C00", "GPIOF") + peripheral("TIM1", "0x40010000")
+      + peripheral("TIM8", "0x40010400", "TIM1") + peripheral("TIM7", "0x40001400")
+      + peripheral("TIM6", "0x40001000", "TIM7") + peripheral("TIM2", "0x40000000")
+      + peripheral("PORT", "0x41004400") + peripheral("PORT_IOBUS", "0x60000000", "PORT"));
+
+    auto const find = [&](std::string_view name) -> Peripheral const* {
+        auto const it = std::ranges::find(chip.peripherals, name, &Peripheral::name);
+        return it == chip.peripherals.end() ? nullptr : &*it;
+    };
+    auto const instances = [](Peripheral const* p) {
+        std::vector<std::pair<std::uint64_t, std::uint64_t>> result;
+        for(auto const& a : p->baseAddresses) { result.emplace_back(a.index, a.address); }
+        return result;
+    };
+    using V = std::vector<std::pair<std::uint64_t, std::uint64_t>>;
+
+    auto const* usart = find("USART");
+    CHECK(usart != nullptr && usart->type == RepeatType::cluster, "USART group");
+    CHECK(usart && (instances(usart) == V{{3, 0x40004800}, {1, 0x40011000}}),
+          "base USART3 keeps its own number");
+    auto const* uart = find("UART");
+    CHECK(uart != nullptr && uart->type == RepeatType::cluster, "UART group of its own");
+    CHECK(uart && (instances(uart) == V{{4, 0x40004C00}, {10, 0x40011C00}}), "UART instances");
+    CHECK(uart && uart->registers.size() == 1 && uart->registers.front().name == "SR",
+          "UART has the base's registers");
+
+    auto const* gpio = find("GPIO");
+    CHECK(gpio && (instances(gpio) == V{{5, 0x40021400}, {2, 0x40020800}, {7, 0x40021C00}}),
+          "port letters as instances");
+
+    CHECK(find("TIM") == nullptr, "no ambiguous TIM group");
+    auto const* tim18 = find("TIM1_8");
+    CHECK(tim18 && (instances(tim18) == V{{1, 0x40010000}, {8, 0x40010400}}), "TIM1_8");
+    auto const* tim67 = find("TIM6_7");
+    CHECK(tim67 && (instances(tim67) == V{{7, 0x40001400}, {6, 0x40001000}}), "TIM6_7 named sorted");
+    CHECK(find("TIM2") != nullptr && find("TIM2")->type == RepeatType::normal,
+          "underived TIM2 stays itself");
+
+    CHECK(find("PORT") != nullptr && find("PORT")->type == RepeatType::normal,
+          "a derived name without an instance is not merged");
+}
+
 void testRegisterDim() {
     auto const  chip = parseChip(R"(
         <peripheral>
@@ -860,7 +926,249 @@ static void testWriteSemantics() {
     CHECK(data.readHasSideEffect && data.mustSupplyMask == 0, "DATA's read pops");
 }
 
+// Named diagnostics: interrupts from the SVD (sorted, one per vector), the register type in RmwHazard,
+// Register::Named with --named-registers, and the InterruptNames.hpp the generator writes.
+static void testDiagnosticNames() {
+    auto const xml  = R"(
+        <peripheral>
+            <name>PERIA</name>
+            <baseAddress>0x40000000</baseAddress>
+            <interrupt><name>PERIA_IRQ_1</name><value>7</value></interrupt>
+            <interrupt><name>PERIA_IRQ_0</name><value>3</value></interrupt>
+            <registers>
+                <register>
+                    <name>CTRL</name>
+                    <addressOffset>0x0</addressOffset>
+                    <fields>
+                        <field><name>EN</name><bitRange>[0:0]</bitRange></field>
+                        <field><name>KEY</name><bitRange>[31:16]</bitRange>
+                            <writeConstraint><range><minimum>0x05FA</minimum><maximum>0x05FA</maximum></range></writeConstraint></field>
+                    </fields>
+                </register>
+                <register>
+                    <name>PLAIN</name>
+                    <addressOffset>0x4</addressOffset>
+                    <fields><field><name>DAT</name><bitRange>[7:0]</bitRange></field></fields>
+                </register>
+            </registers>
+        </peripheral>
+        <peripheral derivedFrom="PERIA">
+            <name>PERIB</name>
+            <baseAddress>0x40001000</baseAddress>
+            <interrupt><name>PERIA_IRQ_1</name><value>7</value></interrupt>
+        </peripheral>)";
+    Chip const chip = parseChip(xml);
+    CHECK(chip.interrupts.size() == 2 && chip.interrupts[0].value == 3
+            && chip.interrupts[0].name == "PERIA_IRQ_0" && chip.interrupts[1].value == 7,
+          "interrupts sorted by value, a repeated one once");
+
+    auto       env               = Generator::Kvasir::getEnvironment();
+    inja::json peripheral        = inja::json(chip).at("peripherals").at(0);
+    peripheral["writeOnlyMask"]  = false;
+    peripheral["namedRegisters"] = false;
+    auto const plain             = env.render(Generator::Kvasir::PeripheralTemplate, peripheral);
+    CHECK(plain.find("Kvasir::Register::RmwHazard<0xFFFF0000, false, CTRL>") != std::string::npos,
+          "a hazard register names itself");
+    CHECK(plain.find("Register::Named<") == std::string::npos,
+          "no Named without --named-registers");
+    peripheral["namedRegisters"] = true;
+    auto const named             = env.render(Generator::Kvasir::PeripheralTemplate, peripheral);
+    CHECK(named.find("Kvasir::Register::Named<PLAIN>") != std::string::npos
+            && named.find("Kvasir::Register::RmwHazard<0xFFFF0000, false, CTRL>")
+                 != std::string::npos,
+          "--named-registers: every other register is Named");
+
+    auto const irqs = env.render(Generator::Kvasir::InterruptNamesTemplate, inja::json(chip));
+    CHECK(irqs.find("std::array<InterruptName, 2>") != std::string::npos
+            && irqs.find("{ 3, \"PERIA_IRQ_0\" }") != std::string::npos,
+          "InterruptNames.hpp");
+}
+
+namespace {
+// parseChip with the write-only guard's options, comments kept (the accepted marker is one)
+Chip parseChipGuarded(std::string const&             peripheralsXml,
+                      ConvertOptions const&          options,
+                      std::vector<WriteOnlyFinding>& findings) {
+    std::string const xml
+      = "<device><name>TESTCHIP</name><width>32</width><size>32</size>"
+        "<access>read-write</access><peripherals>"
+      + peripheralsXml + "</peripherals></device>";
+    pugi::xml_document doc;
+    if(!doc.load_string(xml.c_str(), pugi::parse_default | pugi::parse_comments)) {
+        throw std::runtime_error("test xml invalid");
+    }
+    return ChipFromSVD(doc.child("device"), options, &findings);
+}
+
+std::string oneRegister(std::string const& name,
+                        std::string const& fields,
+                        std::string const& extra = "") {
+    return "<peripheral><name>" + name
+         + "</name><baseAddress>0x40000000</baseAddress><registers><register><name>CTRL</name>"
+           "<addressOffset>0x0</addressOffset>"
+         + extra + "<fields>" + fields + "</fields></register></registers></peripheral>";
+}
+
+constexpr auto ReadWriteEn   = "<field><name>EN</name><bitRange>[1:1]</bitRange></field>";
+constexpr auto ReadWriteMode = "<field><name>MODE</name><bitRange>[5:4]</bitRange></field>";
+constexpr auto PlainSwrst
+  = "<field><name>SWRST</name><bitRange>[0:0]</bitRange><access>write-only</access></field>";
+}   // namespace
+
+// The write-only guard: a write-only field without a write identity next to a writable
+// field whose partial write reads the register is a finding; every way to classify it is not.
+static void testWriteOnlyGuard() {
+    ConvertOptions const off{};   // guard warn, registers off: the defaults
+    {
+        std::vector<WriteOnlyFinding> f;
+        auto const                    chip = parseChipGuarded(
+          oneRegister("TC", std::string{PlainSwrst} + ReadWriteEn + ReadWriteMode),
+          off,
+          f);
+        auto const& r = chip.peripherals.front().registers.front();
+        CHECK(f.size() == 1 && f[0].field == "SWRST" && f[0].reg == "CTRL" && f[0].where == "TC",
+              "one finding for SWRST");
+        CHECK(f.size() == 1 && f[0].rewrittenBy == (std::vector<std::string>{"EN", "MODE"}),
+              "rewritten by both siblings");
+        CHECK(f.size() == 1 && f[0].bits == "bit 0" && f[0].readableSibling, "bits and kind");
+        CHECK(r.writeOnlyNoIdentityMask == 0x1 && !r.writeOnlyRegister, "the mask is SWRST's bit");
+        CHECK(f.size() == 1
+                && describe(f[0])
+                     == "TC.CTRL.SWRST (bit 0) is write-only with no write identity: a write of EN, "
+                        "MODE reads the register and writes SWRST back as read",
+              "the report line");
+    }
+    {
+        std::vector<WriteOnlyFinding> f;
+        auto const                    chip = parseChipGuarded(
+          oneRegister("TC",
+                      std::string{"<field><name>SWRST</name><bitRange>[0:0]</bitRange><access>"
+                                  "write-only</access><modifiedWriteValues>oneToSet"
+                                  "</modifiedWriteValues></field>"}
+                        + ReadWriteEn),
+          off,
+          f);
+        CHECK(f.empty() && chip.peripherals.front().registers.front().writeOnlyNoIdentityMask == 0,
+              "oneToSet: a strobe, classified");
+    }
+    {
+        std::vector<WriteOnlyFinding> f;
+        (void)parseChipGuarded(
+          oneRegister("SCB",
+                      std::string{"<field><name>KEY</name><bitRange>[31:16]</bitRange><access>"
+                                  "write-only</access><writeConstraint><range><minimum>0x5FA"
+                                  "</minimum><maximum>0x5FA</maximum></range></writeConstraint>"
+                                  "</field>"}
+                        + ReadWriteEn),
+          off,
+          f);
+        CHECK(f.empty(), "a one-value writeConstraint: a key, classified");
+    }
+    {
+        std::vector<WriteOnlyFinding> f;
+        auto const                    chip = parseChipGuarded(
+          oneRegister("TC",
+                      std::string{"<field><name>SWRST</name><bitRange>[0:0]</bitRange><access>"
+                                  "write-only</access><!-- Kvasir: write-only accepted: reads 0, "
+                                  "DS l.1 --></field>"}
+                        + ReadWriteEn),
+          off,
+          f);
+        auto const& r = chip.peripherals.front().registers.front();
+        CHECK(f.empty() && r.fields[0].writeOnlyAccepted && r.writeOnlyNoIdentityMask == 0,
+              "the accepted comment silences the field");
+        std::vector<WriteOnlyFinding> g;
+        (void)parseChipGuarded(oneRegister("TC",
+                                           std::string{"<field><name>SWRST</name><bitRange>[0:0]"
+                                                       "</bitRange><access>write-only</access>"
+                                                       "<!-- Kvasir: something else --></field>"}
+                                             + ReadWriteEn),
+                               off,
+                               g);
+        CHECK(g.size() == 1, "another Kvasir comment does not");
+    }
+    {
+        auto const fields
+          = std::string{PlainSwrst}
+          + "<field><name>GO</name><bitRange>[1:1]</bitRange><access>write-only</access></field>";
+        std::vector<WriteOnlyFinding> f;
+        auto const                    chip = parseChipGuarded(oneRegister("EV", fields), off, f);
+        CHECK(f.size() == 2 && !f[0].readableSibling, "registers off: no readable field, findings");
+        CHECK(!chip.peripherals.front().registers.front().writeOnlyRegister, "and not derived");
+        std::vector<WriteOnlyFinding> g;
+        ConvertOptions                derived{};
+        derived.writeOnlyRegisters = WriteOnlyRegisters::derived;
+        auto const  chip2          = parseChipGuarded(oneRegister("EV", fields), derived, g);
+        auto const& r              = chip2.peripherals.front().registers.front();
+        CHECK(g.empty() && r.writeOnlyRegister && r.writeOnlyNoIdentityMask == 0,
+              "derived: a whole-register-only register, no finding");
+        std::vector<WriteOnlyFinding> h;
+        (void)parseChipGuarded(oneRegister("TC", std::string{PlainSwrst} + ReadWriteEn),
+                               derived,
+                               h);
+        CHECK(h.size() == 1, "derived keeps the mixed register's finding");
+    }
+    {
+        std::vector<WriteOnlyFinding> f;
+        (void)parseChipGuarded(
+          oneRegister("FIFO",
+                      std::string{PlainSwrst}
+                        + "<field><name>DATA</name><bitRange>[15:8]</bitRange><readAction>modify"
+                          "</readAction></field>"),
+          off,
+          f);
+        CHECK(f.empty(), "a register whose read has a side effect is never read-modify-written");
+    }
+    {
+        std::vector<WriteOnlyFinding> f;
+        (void)parseChipGuarded(
+          oneRegister("ST",
+                      std::string{PlainSwrst}
+                        + "<field><name>BUSY</name><bitRange>[1:1]</bitRange><access>read-only"
+                          "</access></field>"),
+          off,
+          f);
+        CHECK(f.empty(), "only read-only siblings: nothing writes SWRST back");
+    }
+    {
+        std::vector<WriteOnlyFinding> f;
+        auto const                    chip = parseChipGuarded(
+          oneRegister("PIO",
+                      std::string{"<field><name>STROBE%s</name><bitRange>[0:0]</bitRange><access>"
+                                  "write-only</access><dim>4</dim><dimIncrement>2</dimIncrement>"
+                                  "</field>"}
+                        + "<field><name>MODE</name><bitRange>[9:8]</bitRange></field>"),
+          off,
+          f);
+        CHECK(f.size() == 1
+                && chip.peripherals.front().registers.front().writeOnlyNoIdentityMask == 0x55,
+              "a dim field: the mask covers every element");
+        CHECK(f.size() == 1 && f[0].bits == "bit 0 x4 every 2", "and the report says so");
+    }
+    {
+        std::vector<WriteOnlyFinding> f;
+        auto const                    xml
+          = oneRegister("TC3", std::string{PlainSwrst} + ReadWriteEn)
+          + "<peripheral derivedFrom=\"TC3\"><name>TC4</name><baseAddress>0x40001000</baseAddress>"
+            "</peripheral>";
+        auto const chip = parseChipGuarded(xml, off, f);
+        CHECK(f.size() == 1 && f[0].where == "TC3", "a derived peripheral is reported once");
+        CHECK(chip.peripherals.size() == 1
+                && chip.peripherals.front().registers.front().writeOnlyNoIdentityMask == 0x1,
+              "and shares the result");
+    }
+    {
+        std::vector<WriteOnlyFinding> f;
+        (void)parseChipGuarded(oneRegister("TC", std::string{PlainSwrst} + ReadWriteEn),
+                               ConvertOptions{.guard = WriteOnlyGuard::off},
+                               f);
+        CHECK(f.size() == 1, "the model is the same with the guard off; only the report is not");
+    }
+}
+
 int main() {
+    testDiagnosticNames();
+    testWriteOnlyGuard();
     testWriteSemantics();
     testMasks();
     testNumberParsing();
@@ -876,6 +1184,7 @@ int main() {
     testDimFieldOneMaskAndWidth();
     testDerivedRegister();
     testDerivedPeripheral();
+    testDerivedPeripheralInstanceNames();
     testRegisterDim();
     testClusterWithDim();
     testClusterWithoutDim();

@@ -145,7 +145,10 @@ struct Field {
     // the register must carry it - Register::RmwHazard's MustSupply
     bool key = false;
     // what can be written without changing the field: "none", "zero" or "one" (identityOf)
-    std::string        identity = "none";
+    std::string identity = "none";
+    // `<!-- Kvasir: write-only accepted: <why> -->` inside the <field>: a write-only field without a
+    // write identity that was looked at and is fine as it is - no write-only finding for it
+    bool               writeOnlyAccepted = false;
     std::vector<Value> values;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Field,
                                    name,
@@ -163,6 +166,7 @@ struct Field {
                                    readAction,
                                    key,
                                    identity,
+                                   writeOnlyAccepted,
                                    values)
 };
 
@@ -181,8 +185,14 @@ struct Register {
     Access access = Access::readWrite;
     // Register::RmwHazard: the key fields' bits every write must supply, and whether a read has a
     // side effect (a field with a readAction) - from the SVD (computeMasks)
-    std::uint64_t      mustSupplyMask    = 0;
-    bool               readHasSideEffect = false;
+    std::uint64_t mustSupplyMask    = 0;
+    bool          readHasSideEffect = false;
+    // write-only fields without a write identity that a partial write of a sibling field would read
+    // and write back as read (computeWriteOnlyHazards)
+    std::uint64_t writeOnlyNoIdentityMask = 0;
+    // no field of the register can be read (--write-only-registers=derived): a partial write never
+    // needs to read it
+    bool               writeOnlyRegister = false;
     std::vector<Field> fields;
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Register,
                                    name,
@@ -198,6 +208,8 @@ struct Register {
                                    access,
                                    mustSupplyMask,
                                    readHasSideEffect,
+                                   writeOnlyNoIdentityMask,
+                                   writeOnlyRegister,
                                    fields)
 };
 
@@ -243,14 +255,49 @@ struct Peripheral {
                                    registerGroups)
 };
 
+// The write-only guard (svd_converter --write-only-guard / --write-only-registers / --write-only-mask).
+enum class WriteOnlyGuard : std::uint8_t { off, warn, error };
+
+enum class WriteOnlyRegisters : std::uint8_t { off, derived };
+
+struct ConvertOptions {
+    WriteOnlyGuard     guard              = WriteOnlyGuard::warn;
+    bool               writeOnlyMask      = false;   // passed to the template as `writeOnlyMask`
+    WriteOnlyRegisters writeOnlyRegisters = WriteOnlyRegisters::off;
+    bool               namedRegisters
+      = false;   // --named-registers: every register's Address names it (Register::Named)
+};
+
+// One unclassified write-only field: where it is and which sibling writes would rewrite it.
+struct WriteOnlyFinding {
+    std::string              where;   // the SVD peripheral (and cluster / register group)
+    std::string              reg;
+    std::string              field;
+    std::string              bits;
+    std::vector<std::string> rewrittenBy;
+    bool                     readableSibling = false;   // false: no field of the register reads
+};
+
+// An <interrupt> of a peripheral: the vector's name and its index (0 = the first device interrupt, after the core's
+// exceptions). For the compile errors that name an interrupt (the generated InterruptNames.hpp).
+struct Interrupt {
+    std::string   name;
+    std::uint64_t value{};
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE(Interrupt,
+                                   name,
+                                   value)
+};
+
 struct Chip {
     std::string             name;
     std::string             description;
     std::vector<Peripheral> peripherals;
+    std::vector<Interrupt>  interrupts;   // sorted by value, one per value
     NLOHMANN_DEFINE_TYPE_INTRUSIVE(Chip,
                                    name,
                                    description,
-                                   peripherals)
+                                   peripherals,
+                                   interrupts)
 };
 #ifdef __clang__
     #pragma clang diagnostic pop

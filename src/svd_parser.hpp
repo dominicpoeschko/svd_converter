@@ -297,6 +297,16 @@ inline Field FieldFromSVD(pugi::xml_node const& field,
         fieldResult.key = getCheckedSVD<std::uint64_t>(range, "minimum", "writeConstraint")
                        == getCheckedSVD<std::uint64_t>(range, "maximum", "writeConstraint");
     }
+    // `<!-- Kvasir: write-only accepted: ... -->`: seen only when the document was loaded with
+    // pugi::parse_comments (main.cpp does)
+    for(auto const& node : field.children()) {
+        if(node.type() == pugi::node_comment
+           && std::string_view{node.value()}.find("Kvasir: write-only accepted")
+                != std::string_view::npos)
+        {
+            fieldResult.writeOnlyAccepted = true;
+        }
+    }
 
     if(!field.child("dim").empty()) {
         fieldResult.dim          = getCheckedSVD<std::uint64_t>(field, "dim", "Field");
@@ -415,6 +425,60 @@ inline void computeMasks(Register& r) {
         }
     }
     r.access = allReadOnly ? Access::readOnly : Access::readWrite;
+}
+
+// The bits of a field, every element of a dim field.
+inline std::uint64_t fieldMask(Field const& f) {
+    std::uint64_t const elements = f.dim == 0 ? 1 : f.dim;
+    std::uint64_t       mask     = 0;
+    for(std::uint64_t i = 0; i < elements; ++i) {
+        mask |= maskFromRange(f.stopBit + i * f.dimIncrement, f.startBit + i * f.dimIncrement);
+    }
+    return mask;
+}
+
+constexpr bool isWriteOnly(Access a) { return a == Access::writeOnly || a == Access::writeOnce; }
+
+// After computeMasks. A write-only field W without a write identity (no modifiedWriteValues that
+// makes a written 0 or 1 harmless), not a key, not accepted: a partial write of a sibling field F
+// that needs a read (the needsRead rule of Kvasir's Register/Exec.hpp) and does not cover W reads
+// the register and writes W back as read - a strobe fires again, a FIFO push pushes. Returns the
+// siblings that do so per such W; W's bits go into writeOnlyNoIdentityMask. With `derived`, a
+// register none of whose fields can be read is a whole-register-only register (writeOnlyRegister)
+// and has no findings: a partial write of it will not read.
+inline std::vector<std::pair<std::size_t,
+                             std::vector<std::size_t>>>
+computeWriteOnlyHazards(Register&          r,
+                        WriteOnlyRegisters registers) {
+    r.writeOnlyNoIdentityMask = 0;
+    r.writeOnlyRegister
+      = registers == WriteOnlyRegisters::derived && !r.fields.empty()
+     && std::ranges::all_of(r.fields, [](Field const& f) { return isWriteOnly(f.access); });
+    std::vector<std::pair<std::size_t, std::vector<std::size_t>>> hazards;
+    if(r.readHasSideEffect || r.writeOnlyRegister) {
+        return hazards;
+    }   // never read-modify-written
+    auto const all = maskFromRange(DataTypeSize(r.dataType) - 1, 0);
+    for(std::size_t wi = 0; wi < r.fields.size(); ++wi) {
+        auto const& w = r.fields[wi];
+        if(!isWriteOnly(w.access) || w.key || w.writeOnlyAccepted || w.identity != "none") {
+            continue;
+        }
+        auto const               wm = fieldMask(w);
+        std::vector<std::size_t> by;
+        for(std::size_t fi = 0; fi < r.fields.size(); ++fi) {
+            auto const& f = r.fields[fi];
+            if(fi == wi || f.access == Access::readOnly) { continue; }
+            auto const cm        = fieldMask(f);
+            bool const needsRead = ((cm | r.zeroMask) | (r.oneMask & ~cm)) != all;
+            if(needsRead && (wm & ~cm) != 0) { by.push_back(fi); }
+        }
+        if(!by.empty()) {
+            r.writeOnlyNoIdentityMask |= wm;
+            hazards.emplace_back(wi, std::move(by));
+        }
+    }
+    return hazards;
 }
 
 inline std::variant<Register,
@@ -587,6 +651,84 @@ inline Peripheral ClusterFromSVD(pugi::xml_node    cluster,
     return peripheral;
 }
 
+struct InstanceName {
+    std::string   stem;
+    std::uint64_t index;
+};
+
+// The instance in a peripheral's name: trailing digits (USART3 -> USART, 3), or with
+// letterInstances one trailing capital (GPIOC -> GPIO, 2). nullopt for a name with neither.
+inline std::optional<InstanceName> splitInstanceName(std::string_view name,
+                                                     bool             letterInstances) {
+    if(letterInstances) {
+        if(name.size() < 2 || name.back() < 'A' || name.back() > 'Z') { return std::nullopt; }
+        return InstanceName{std::string{name.substr(0, name.size() - 1)},
+                            static_cast<std::uint64_t>(name.back() - 'A')};
+    }
+    auto const firstDigit = name.find_last_not_of("0123456789") + 1;
+    if(firstDigit == 0 || firstDigit == name.size()) { return std::nullopt; }
+    return InstanceName{std::string{name.substr(0, firstDigit)},
+                        std::stoull(std::string{name.substr(firstDigit)})};
+}
+
+struct InstanceGroup {
+    std::string              stem;
+    std::vector<AddressType> instances;
+};
+
+// The base peripheral and the ones derived from it, as instances grouped by name stem; the base's
+// group first, its own instance first. Each instance number comes from the peripheral's own name
+// (TC3 <- TC4 is TC 3 and 4; GPIOF <- GPIOC is GPIO 5 and 2); a base without one is instance 0
+// (AC <- AC1). A derived peripheral with a stem of its own makes a group of its own (ST: UART4 <-
+// USART3). Empty when nothing derives from base.
+inline std::vector<InstanceGroup> groupInstances(std::string const&      baseName,
+                                                 std::uint64_t           baseAddress,
+                                                 std::vector<derived_t>& derived) {
+    std::vector<derived_t*> members;
+    for(auto& derived_ref : derived) {
+        auto& [name, derivedBase, address, processed] = derived_ref;
+        if(derivedBase != baseName) { continue; }
+        if(processed) {
+            throw std::runtime_error("found derived peripheral multiple times " + name);
+        }
+        members.push_back(&derived_ref);
+    }
+    if(members.empty()) { return {}; }
+
+    // Port letters only when there are no digits and every name is the same stem plus a capital.
+    bool const letterInstances = [&] {
+        if(splitInstanceName(baseName, false)) { return false; }
+        auto const base = splitInstanceName(baseName, true);
+        return base && std::ranges::all_of(members, [&](derived_t const* member) {
+                   auto const instance = splitInstanceName(std::get<0>(*member), true);
+                   return instance && instance->stem == base->stem;
+               });
+    }();
+    auto const base
+      = splitInstanceName(baseName, letterInstances).value_or(InstanceName{baseName, 0});
+
+    std::vector<InstanceGroup> groups{
+      {base.stem, {AddressType{base.index, baseAddress}}}
+    };
+    for(auto* member : members) {
+        auto& [name, derivedBase, address, processed] = *member;
+        auto const instance                           = splitInstanceName(name, letterInstances);
+        if(!instance) {
+            std::print(stderr, "something wrong ? {} {}\n", baseName, name);
+            continue;
+        }
+        processed  = true;
+        auto group = std::ranges::find(groups, instance->stem, &InstanceGroup::stem);
+        if(group == groups.end()) {
+            groups.push_back({instance->stem, {}});
+            group = std::prev(groups.end());
+        }
+        group->instances.push_back(AddressType{instance->index, address});
+    }
+    if(groups.size() == 1 && groups.front().instances.size() == 1) { return {}; }
+    return groups;
+}
+
 inline std::variant<Peripheral,
                     cluster_t,
                     derived_t>
@@ -647,7 +789,68 @@ PeripheralFromSVD(pugi::xml_node const& peripheral,
 }
 }   // namespace
 
-inline Chip ChipFromSVD(pugi::xml_node const& device) {
+namespace {
+// "bit 11", "bits 15:8"; a dim field: its first element and the count
+inline std::string bitsText(Field const& f) {
+    std::string t = f.startBit == f.stopBit ? std::format("bit {}", f.startBit)
+                                            : std::format("bits {}:{}", f.stopBit, f.startBit);
+    if(f.dim != 0) { t += std::format(" x{} every {}", f.dim, f.dimIncrement); }
+    return t;
+}
+
+inline void collectWriteOnlyFindings(std::string const&             where,
+                                     std::vector<Register>&         registers,
+                                     ConvertOptions const&          options,
+                                     std::vector<WriteOnlyFinding>* findings) {
+    for(auto& r : registers) {
+        for(auto const& [wi, by] : computeWriteOnlyHazards(r, options.writeOnlyRegisters)) {
+            if(findings == nullptr) { continue; }
+            WriteOnlyFinding finding{.where       = where,
+                                     .reg         = r.name,
+                                     .field       = r.fields[wi].name,
+                                     .bits        = bitsText(r.fields[wi]),
+                                     .rewrittenBy = {},
+                                     .readableSibling
+                                     = std::ranges::any_of(r.fields, [](Field const& f) {
+                                           return !isWriteOnly(f.access);
+                                       })};
+            for(auto const fi : by) { finding.rewrittenBy.push_back(r.fields[fi].name); }
+            findings->push_back(std::move(finding));
+        }
+    }
+}
+
+inline void collectWriteOnlyFindings(std::string const&             where,
+                                     Peripheral&                    peripheral,
+                                     ConvertOptions const&          options,
+                                     std::vector<WriteOnlyFinding>* findings) {
+    collectWriteOnlyFindings(where, peripheral.registers, options, findings);
+    for(auto& group : peripheral.registerGroups) {
+        collectWriteOnlyFindings(where + "." + group.name, group.registers, options, findings);
+    }
+}
+}   // namespace
+
+// The one-line report of a finding, as the converter prints it.
+inline std::string describe(WriteOnlyFinding const& f) {
+    std::string by;
+    for(auto const& name : f.rewrittenBy) { by += (by.empty() ? "" : ", ") + name; }
+    return std::format(
+      "{}.{}.{} ({}) is write-only with no write identity: a write of {} reads the "
+      "register and writes {} back as read",
+      f.where,
+      f.reg,
+      f.field,
+      f.bits,
+      by,
+      f.field);
+}
+
+// ChipFromSVD with the write-only guard's options; the findings (one per unclassified write-only
+// field, each peripheral once: derived peripherals share their base's registers) go to `findings`.
+inline Chip ChipFromSVD(pugi::xml_node const&          device,
+                        ConvertOptions const&          options,
+                        std::vector<WriteOnlyFinding>* findings) {
     Chip chip;
     auto access      = getDefaultSVD(device, "access", Access::readWrite);
     chip.name        = getCheckedSVD<std::string>(device, "name", "Chip");
@@ -661,6 +864,10 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
     std::vector<derived_t> derived;
     std::vector<cluster_t> cluster;
     for(auto const& peripheral : peripherals.children("peripheral")) {
+        for(auto const& irq : peripheral.children("interrupt")) {
+            chip.interrupts.push_back({getCheckedSVD<std::string>(irq, "name", "interrupt"),
+                                       getCheckedSVD<std::uint64_t>(irq, "value", "interrupt")});
+        }
         auto peripheral_variant = PeripheralFromSVD(peripheral, access, width, size);
         if(std::holds_alternative<derived_t>(peripheral_variant)) {
             derived.push_back(std::move(std::get<derived_t>(peripheral_variant)));
@@ -671,41 +878,72 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
         }
     }
 
+    // Before any peripheral is copied into its derived instances: the copies carry the result, the
+    // findings name each SVD peripheral once.
     for(auto& peripheral_ref : chip.peripherals) {
-        std::string newName = peripheral_ref.name;
-        RepeatType  newType = peripheral_ref.type;
-        for(auto& derived_ref : derived) {
-            auto& [name, baseName, address, processed] = derived_ref;
-            if(baseName != peripheral_ref.name) { continue; }
-            if(processed) {
-                throw std::runtime_error("found derived peripheral multiple times " + name);
-            }
-
-            auto const& derivedName = name;
-
-            auto miss = std::ranges::mismatch(peripheral_ref.name, derivedName);
-            if(miss.in1 == end(peripheral_ref.name)) {
-                if(derivedName.size() != peripheral_ref.name.size() + 1) {
-                    std::print(stderr,
-                               "something wrong ? {} {}\n",
-                               peripheral_ref.name,
-                               derivedName);
-                    continue;
-                }
-            }
-
-            processed = true;
-
-            newType = RepeatType::cluster;
-            newName.resize(
-              static_cast<std::size_t>(std::distance(begin(peripheral_ref.name), miss.in1)));
-
-            std::string const num = derivedName.substr(newName.size());
-
-            peripheral_ref.baseAddresses.emplace_back(std::stoull(num), address);
+        collectWriteOnlyFindings(peripheral_ref.name, peripheral_ref, options, findings);
+    }
+    for(auto& [clusterPeripherals, clusterName] : cluster) {
+        for(auto& peripheral_ref : clusterPeripherals) {
+            collectWriteOnlyFindings(clusterName + "." + peripheral_ref.name,
+                                     peripheral_ref,
+                                     options,
+                                     findings);
         }
-        peripheral_ref.name = newName;
-        peripheral_ref.type = newType;
+    }
+
+    // A merged peripheral and the instance groups it came from, for the name clash check below.
+    std::vector<std::pair<std::size_t, std::vector<AddressType>>> merged;
+    std::vector<Peripheral>                                       otherStems;
+
+    for(std::size_t i = 0; i < chip.peripherals.size(); ++i) {
+        auto& peripheral_ref = chip.peripherals[i];
+        auto  groups         = groupInstances(peripheral_ref.name,
+                                              peripheral_ref.baseAddresses.front().address,
+                                              derived);
+        if(groups.empty()) { continue; }
+
+        peripheral_ref.name          = groups.front().stem;
+        peripheral_ref.type          = RepeatType::cluster;
+        peripheral_ref.baseAddresses = groups.front().instances;
+
+        // ST: UART4 derivedFrom USART3 - same registers, a family of its own.
+        for(auto& group : groups | std::views::drop(1)) {
+            Peripheral copy    = peripheral_ref;
+            copy.name          = group.stem;
+            copy.baseAddresses = std::move(group.instances);
+            otherStems.push_back(std::move(copy));
+        }
+        merged.emplace_back(i, peripheral_ref.baseAddresses);
+    }
+    for(auto& peripheral_ref : otherStems) {
+        merged.emplace_back(chip.peripherals.size(), peripheral_ref.baseAddresses);
+        chip.peripherals.push_back(std::move(peripheral_ref));
+    }
+
+    // ST: TIM1 <- TIM8 and TIM3 <- TIM4 both have the stem TIM, with different registers; such
+    // groups are named after their members instead: TIM1_8, TIM3_4.
+    auto const nameCount = [&](std::string const& name) {
+        return std::ranges::count(chip.peripherals, name, &Peripheral::name);
+    };
+    std::vector<std::string> newNames;
+    for(auto const& [index, instances] : merged) {
+        auto const& name = chip.peripherals[index].name;
+        if(nameCount(name) < 2) {
+            newNames.push_back(name);
+            continue;
+        }
+        std::vector<std::uint64_t> numbers;
+        std::ranges::transform(instances, std::back_inserter(numbers), &AddressType::index);
+        std::ranges::sort(numbers);
+        std::string newName = name;
+        for(auto const number : numbers) {
+            newName += std::format("{}{}", newName == name ? "" : "_", number);
+        }
+        newNames.push_back(std::move(newName));
+    }
+    for(std::size_t i = 0; i < merged.size(); ++i) {
+        chip.peripherals[merged[i].first].name = newNames[i];
     }
 
     for(auto& cluster_ref : cluster) {
@@ -713,31 +951,26 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
         std::string              newName        = clusterName;
         RepeatType               newType        = RepeatType::normal;
         std::vector<AddressType> newAddr;
-        for(auto& derived_ref : derived) {
-            auto& [name, baseName, address, processed] = derived_ref;
-            if(baseName != clusterName) { continue; }
-            if(processed) {
-                throw std::runtime_error("found derived peripheral multiple times " + name);
-            }
 
-            auto const& derivedName = name;
-
-            auto miss = std::ranges::mismatch(clusterName, derivedName);
-            if(miss.in1 == end(clusterName)) {
-                if(derivedName.size() != clusterName.size() + 1) {
-                    std::print(stderr, "something wrong ? {} {}\n", clusterName, derivedName);
-                    continue;
-                }
-            }
-
-            processed = true;
-
+        auto groups = groupInstances(
+          clusterName,
+          clusterPeripherals.empty() ? 0 : clusterPeripherals.front().baseAddresses.front().address,
+          derived);
+        if(!groups.empty()) {
+            newName = groups.front().stem;
             newType = RepeatType::cluster;
-            newName.resize(static_cast<std::size_t>(std::distance(begin(clusterName), miss.in1)));
-
-            std::string const num = derivedName.substr(newName.size());
-
-            newAddr.emplace_back(std::stoull(num), address);
+            // The cluster peripherals carry the base's address as instance 0 already.
+            auto const& instances = groups.front().instances;
+            newAddr.assign(std::next(instances.begin()), instances.end());
+            for(auto& peripheral_ref : clusterPeripherals) {
+                peripheral_ref.baseAddresses.front().index = instances.front().index;
+            }
+            for(auto const& group : groups | std::views::drop(1)) {
+                std::print(stderr,
+                           "derived peripherals of cluster {} named {}* are not supported\n",
+                           clusterName,
+                           group.stem);
+            }
         }
 
         for(auto& peripheral_ref : clusterPeripherals) {
@@ -782,5 +1015,11 @@ inline Chip ChipFromSVD(pugi::xml_node const& device) {
         }
     }
 
+    // one name per vector: SVDs repeat an interrupt in every peripheral that shares it (RP2350 TIMER0/1 ...)
+    std::ranges::stable_sort(chip.interrupts, {}, &Interrupt::value);
+    auto const dup = std::ranges::unique(chip.interrupts, {}, &Interrupt::value);
+    chip.interrupts.erase(dup.begin(), dup.end());
     return chip;
 }
+
+inline Chip ChipFromSVD(pugi::xml_node const& device) { return ChipFromSVD(device, {}, nullptr); }

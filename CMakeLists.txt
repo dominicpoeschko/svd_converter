@@ -72,9 +72,39 @@ endif()
 find_program(CLANG_FORMAT clang-format)
 mark_as_advanced(FORCE CLANG_FORMAT)
 
+# The write-only guard (plans/embedded_cpp_ideas/10_writeonly_guard.md). A cache value overrides every svd_convert's
+# keyword in this tree; empty = the keyword, else the default below.
+set(KVASIR_SVD_WRITE_ONLY_GUARD
+    ""
+    CACHE STRING "override every svd_convert's WRITE_ONLY_GUARD (off|warn|error)")
+set(KVASIR_SVD_WRITE_ONLY_REGISTERS
+    ""
+    CACHE STRING "override every svd_convert's WRITE_ONLY_REGISTERS (derived|off)")
+set(KVASIR_SVD_WRITE_ONLY_MASK
+    ""
+    CACHE STRING "override every svd_convert's WRITE_ONLY_MASK (ON|OFF)")
+# Named compile errors (plans/embedded_cpp_ideas/09, phase 2): every register's Address names its register struct, so
+# every register diagnostic names its fields - at a compile-time cost (measured in the plan's Status), hence off.
+set(KVASIR_SVD_NAMED_REGISTERS
+    ""
+    CACHE STRING "override every svd_convert's NAMED_REGISTERS (ON|OFF)")
+
+# svd_convert(<target> SVD_FILE <svd> OUTPUT_DIRECTORY <dir> [GENERATOR kvasir_bit|json|custom_template] [GENERATOR_ARGS
+# <template path> <extension>] [WRITE_ONLY_GUARD off|warn|error] [WRITE_ONLY_REGISTERS derived|off] [WRITE_ONLY_MASK
+# ON|OFF] [NAMED_REGISTERS ON|OFF])
+#
+# WRITE_ONLY_GUARD: report write-only fields a partial write would read back and rewrite - `warn` prints them, `error`
+# also fails the generator step. Default here `off`, not the converter's `warn`: the converter runs inside firmware
+# builds, whose output must stay silent; a chip turns it on once its SVD is classified. WRITE_ONLY_REGISTERS derived: a
+# register with no readable field is whole-register-only (default off). WRITE_ONLY_MASK ON: the template's
+# `writeOnlyMask` switch (default OFF). NAMED_REGISTERS ON: every register's Address carries Register::Named<itself> for
+# compile errors (default OFF; registers with an RmwHazard name themselves always).
 function(svd_convert targetname)
 
-    cmake_parse_arguments(PARSE_ARGV 1 PARSED_ARGS "" "SVD_FILE;OUTPUT_DIRECTORY;GENERATOR" "GENERATOR_ARGS")
+    cmake_parse_arguments(
+        PARSE_ARGV 1 PARSED_ARGS ""
+        "SVD_FILE;OUTPUT_DIRECTORY;GENERATOR;WRITE_ONLY_GUARD;WRITE_ONLY_REGISTERS;WRITE_ONLY_MASK;NAMED_REGISTERS"
+        "GENERATOR_ARGS")
 
     if(PARSED_ARGS_UNPARSED_ARGUMENTS)
         message(FATAL_ERROR "svd_convert: Unknown arguments: ${PARSED_ARGS_UNPARSED_ARGUMENTS}")
@@ -130,7 +160,49 @@ function(svd_convert targetname)
         )
     endif()
 
-    set(command ${svd_converter_bin} ${iname} ${dname} ${PARSED_ARGS_GENERATOR} ${template_path} ${file_extension})
+    # a non-empty cache value wins - compared as a string: `if(<var>)` would take "off"/"OFF" for "not set"
+    foreach(option GUARD REGISTERS MASK)
+        if(NOT "${KVASIR_SVD_WRITE_ONLY_${option}}" STREQUAL "")
+            set(PARSED_ARGS_WRITE_ONLY_${option} ${KVASIR_SVD_WRITE_ONLY_${option}})
+        endif()
+    endforeach()
+    if(NOT PARSED_ARGS_WRITE_ONLY_GUARD)
+        set(PARSED_ARGS_WRITE_ONLY_GUARD off)
+    endif()
+    if(NOT PARSED_ARGS_WRITE_ONLY_REGISTERS)
+        set(PARSED_ARGS_WRITE_ONLY_REGISTERS off)
+    endif()
+    if(NOT PARSED_ARGS_WRITE_ONLY_GUARD MATCHES "^(off|warn|error)$")
+        message(
+            FATAL_ERROR
+                "svd_convert: WRITE_ONLY_GUARD must be off, warn or error, not '${PARSED_ARGS_WRITE_ONLY_GUARD}'")
+    endif()
+    if(NOT PARSED_ARGS_WRITE_ONLY_REGISTERS MATCHES "^(derived|off)$")
+        message(
+            FATAL_ERROR
+                "svd_convert: WRITE_ONLY_REGISTERS must be derived or off, not '${PARSED_ARGS_WRITE_ONLY_REGISTERS}'")
+    endif()
+    set(write_only_options --write-only-guard=${PARSED_ARGS_WRITE_ONLY_GUARD}
+                           --write-only-registers=${PARSED_ARGS_WRITE_ONLY_REGISTERS})
+    if(PARSED_ARGS_WRITE_ONLY_MASK)
+        list(APPEND write_only_options --write-only-mask=on)
+    endif()
+    if(NOT "${KVASIR_SVD_NAMED_REGISTERS}" STREQUAL "")
+        set(PARSED_ARGS_NAMED_REGISTERS ${KVASIR_SVD_NAMED_REGISTERS})
+    endif()
+    if(PARSED_ARGS_NAMED_REGISTERS)
+        list(APPEND write_only_options --named-registers=on)
+    endif()
+
+    # the options are on the command line: a changed option re-runs the generator
+    set(command
+        ${svd_converter_bin}
+        ${write_only_options}
+        ${iname}
+        ${dname}
+        ${PARSED_ARGS_GENERATOR}
+        ${template_path}
+        ${file_extension})
 
     if(NOT EXISTS ${CLANG_FORMAT} OR NOT ${PARSED_ARGS_GENERATOR} STREQUAL "kvasir_bit")
         add_custom_command(

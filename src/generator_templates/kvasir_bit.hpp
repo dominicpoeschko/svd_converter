@@ -60,6 +60,29 @@ namespace Kvasir::Peripheral::{{ upper(name) }} {
 }
 )";
 
+    // The interrupt vectors' names, for compile errors that name an interrupt (Kvasir_SDK StartUp diagnostics):
+    // constant-expression only, no flash.
+    static constexpr auto InterruptNamesTemplate = R"(
+#pragma once
+#include <array>
+#include <cstdint>
+#include <string_view>
+
+// the device interrupts of {{ name }} from its SVD: index (0 = the first after the core's exceptions) and name
+namespace Kvasir::Peripheral {
+struct InterruptName {
+    std::uint32_t    index;
+    std::string_view name;
+};
+
+inline constexpr std::array<InterruptName, {{ length(interrupts) }}> interruptNames{ {
+{% for irq in interrupts %}
+    { {{ irq.value }}, "{{ irq.name }}" },
+{% endfor %}
+} };
+}
+)";
+
     static constexpr auto RegisterGroupTemplate = R"(
 //{{ registerGroup.description }}
 template<unsigned GroupIndex>
@@ -95,8 +118,14 @@ struct {{ upper(register.name) }} {
                         {{ hex(register.zeroMask, register.dataType) }},
                         {{ hex(register.oneMask, register.dataType) }},
                         {{ dataType(register.dataType) }}
-                        {% if register.mustSupplyMask != 0 or register.readHasSideEffect %}
-                        , Kvasir::Register::RmwHazard<{{ hex(register.mustSupplyMask, register.dataType) }}, {{ register.readHasSideEffect }}>
+                        {% if register.writeOnlyRegister %}
+                        , Kvasir::Register::WriteOnlyRegister<{{ upper(register.name) }}>
+                        {% else if writeOnlyMask and register.writeOnlyNoIdentityMask != 0 %}
+                        , Kvasir::Register::RmwHazard<{{ hex(register.mustSupplyMask, register.dataType) }}, {{ register.readHasSideEffect }}, {{ upper(register.name) }}, {{ hex(register.writeOnlyNoIdentityMask, register.dataType) }}>
+                        {% else if register.mustSupplyMask != 0 or register.readHasSideEffect %}
+                        , Kvasir::Register::RmwHazard<{{ hex(register.mustSupplyMask, register.dataType) }}, {{ register.readHasSideEffect }}, {{ upper(register.name) }}>
+                        {% else if namedRegisters %}
+                        , Kvasir::Register::Named<{{ upper(register.name) }}>
                         {% endif %}>;
 
     static constexpr FieldLocation<Addr, maskFromRange({{maxBitDataType(register.dataType) }}, 0), {{ makeAccess(register.access, "empty", "") }}, {{ dataType(register.dataType) }}> FULLREGISTER{};
