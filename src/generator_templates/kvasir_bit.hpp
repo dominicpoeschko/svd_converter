@@ -17,6 +17,10 @@ namespace Generator { namespace Kvasir {
 #include <array>
 #include <cstdint>
 #include <string_view>
+#if __has_include("remote_fmt/catalog.hpp")
+    #include "remote_fmt/catalog.hpp"
+    #include "string_constant/string_constant.hpp"
+#endif
 
 //{{ description }}
 namespace Kvasir::Peripheral::{{ upper(name) }} {
@@ -256,6 +260,50 @@ struct {{ upper(register.name) }} {
 #ifdef KVASIR_REGISTER_VERIFY_MASKS
     static_assert(Kvasir::Register::Detail::masksMatchFields<Addr>(field_masks, field_identities),
                   "the register's write-ignored masks do not follow from its fields");
+#endif
+
+    // The dimensions in front of the fields in fmt_string (a group's and a cluster's index), as
+    // data, and per field the catalog id of its value's name where the field is an enumeration
+    // (0 for a value without one, nullptr for a number). Kvasir/Register/RegisterFmt.hpp logs a
+    // register as one loop over field_masks with these, instead of a copy of the whole argument
+    // list per register (2026-10-06). The ids need remote_fmt's catalog, so only with it.
+    static constexpr std::array<unsigned, 0{% if inRegisterGroup %} + 1{% endif %}{% if register.type == "cluster" %} + 1{% endif %}> field_dims{ {% if inRegisterGroup %}GroupIndex,{% endif %}{% if register.type == "cluster" %}Index,{% endif %} };
+#if __has_include("remote_fmt/catalog.hpp")
+    // Function templates, so that nothing of this is compiled for a register nobody logs; the
+    // ids are generated before the link from the uses that remain (clang would warn about the
+    // declarations it sees here).
+    #ifdef __clang__
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wundefined-func-template"
+    #endif
+    {% for field in register.fields %}
+        {% if field.type == "enum" %}
+    template<typename = void>
+    static remote_fmt::catalog_id fieldName_{{ lower(field.name) }}(unsigned value) {
+            {% for value in field.values %}
+        if(value == {{ value.value }}) { return remote_fmt::catalog<decltype(SC_LIFT("{{ lower(value.name) }}"))>(); }
+            {% endfor %}
+        return 0;
+    }
+        {% endif %}
+    {% endfor %}
+    template<typename = void>
+    static constexpr auto fieldNameOf() {
+        return std::to_array<remote_fmt::catalog_id (*)(unsigned)>({
+    {% for field in register.fields %}
+        {% if field.repType == "cluster" %}
+            {% for i in range(field.dim) %}
+                {% if field.type == "enum" %}&fieldName_{{ lower(field.name) }}<>,{% else %}nullptr,{% endif %}
+            {% endfor %}
+        {% else %}
+            {% if field.type == "enum" %}&fieldName_{{ lower(field.name) }}<>,{% else %}nullptr,{% endif %}
+        {% endif %}
+    {% endfor %}
+        });
+    }
+    #ifdef __clang__
+        #pragma clang diagnostic pop
+    #endif
 #endif
     {% endif %}
 
