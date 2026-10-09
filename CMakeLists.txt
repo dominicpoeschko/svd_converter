@@ -72,8 +72,8 @@ endif()
 find_program(CLANG_FORMAT clang-format)
 mark_as_advanced(FORCE CLANG_FORMAT)
 
-# The write-only guard (plans/embedded_cpp_ideas/10_writeonly_guard.md). A cache value overrides every svd_convert's
-# keyword in this tree; empty = the keyword, else the default below.
+# The write-only guard. A cache value overrides every svd_convert's keyword in this tree; empty = the keyword, else the
+# default below.
 set(KVASIR_SVD_WRITE_ONLY_GUARD
     ""
     CACHE STRING "override every svd_convert's WRITE_ONLY_GUARD (off|warn|error)")
@@ -83,8 +83,8 @@ set(KVASIR_SVD_WRITE_ONLY_REGISTERS
 set(KVASIR_SVD_WRITE_ONLY_MASK
     ""
     CACHE STRING "override every svd_convert's WRITE_ONLY_MASK (ON|OFF)")
-# Named compile errors (plans/embedded_cpp_ideas/09, phase 2): every register's Address names its register struct, so
-# every register diagnostic names its fields - at a compile-time cost (measured in the plan's Status), hence off.
+# Named compile errors: every register's Address names its register struct, so every register diagnostic names its
+# fields - at a compile-time cost, hence off.
 set(KVASIR_SVD_NAMED_REGISTERS
     ""
     CACHE STRING "override every svd_convert's NAMED_REGISTERS (ON|OFF)")

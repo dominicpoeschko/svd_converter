@@ -266,7 +266,7 @@ struct {{ upper(register.name) }} {
     // data, and per field the catalog id of its value's name where the field is an enumeration
     // (0 for a value without one, nullptr for a number). Kvasir/Register/RegisterFmt.hpp logs a
     // register as one loop over field_masks with these, instead of a copy of the whole argument
-    // list per register (2026-10-06). The ids need remote_fmt's catalog, so only with it.
+    // list per register. The ids need remote_fmt's catalog, so only with it.
     static constexpr std::array<unsigned, 0{% if inRegisterGroup %} + 1{% endif %}{% if register.type == "cluster" %} + 1{% endif %}> field_dims{ {% if inRegisterGroup %}GroupIndex,{% endif %}{% if register.type == "cluster" %}Index,{% endif %} };
 #if __has_include("remote_fmt/catalog.hpp")
     // Function templates, so that nothing of this is compiled for a register nobody logs; the
