@@ -394,12 +394,18 @@ constexpr std::string_view identityName(Identity i) {
 
 // The register's write-ignored masks from its fields. zeroMask: the bits a write of zero leaves
 // alone - reserved bits, fields with identity zero (one-to-* flags, read-only fields). oneMask: the
-// bits a write of one leaves alone - zero-to-* fields. Both disjoint. A partial write that covers
+// bits a write of one leaves alone - zero-to-* fields. Both disjoint. writeBackActsMask: the part of
+// zeroMask a read-modify-write must still write as 0, the writable one-to-* fields (a 1 read back and
+// written again clears a flag or fires a trigger); reserved and read-only bits are kept as read - Arm
+// RES0 is should-be-zero-or-preserved (DDI0553B.y glossary "RES0"), SAM D21 reserved bits always read
+// 0 (DS40001882L 46.4 "Registers and Bits"), STM32 reserved bits "must be kept at reset value" (RM0430
+// 1.2). A partial write that covers
 // every bit outside them needs no read. Also the register's RmwHazard: the bits of its key fields
 // (mustSupplyMask) and whether any field's read has a side effect (a readAction).
 inline void computeMasks(Register& r) {
     r.zeroMask          = maskFromRange(DataTypeSize(r.dataType) - 1, 0);
     r.oneMask           = 0;
+    r.writeBackActsMask = 0;
     r.mustSupplyMask    = 0;
     r.readHasSideEffect = false;
     bool allReadOnly    = !r.fields.empty();
@@ -420,7 +426,11 @@ inline void computeMasks(Register& r) {
                 r.zeroMask = clearBits(r.zeroMask, start, stop);
                 r.oneMask |= maskFromRange(stop, start);
                 break;
-            case Identity::zero: break;   // stays in zeroMask
+            case Identity::zero:   // stays in zeroMask
+                if(f.access != Access::readOnly) {
+                    r.writeBackActsMask |= maskFromRange(stop, start);
+                }
+                break;
             }
         }
     }

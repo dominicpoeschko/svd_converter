@@ -236,6 +236,8 @@ void testWriteMasks() {
           "modifiedWriteValues parsed");
     // zeroMask: every bit not covered by a plain field, oneToClear fields stay set
     CHECK(reg.zeroMask == 0xFFFFCFF0, "zeroMask keeps oneToClear bits");
+    // writeBackActsMask: of zeroMask only the oneToClear field, reserved bits are kept as read
+    CHECK(reg.writeBackActsMask == 0x00000100, "writeBackActsMask is the oneToClear field alone");
     // oneMask: bits where writing one is the no-op, i.e. zeroTo* fields
     CHECK(reg.oneMask == 0x00003000, "oneMask covers zeroToClear bits");
 }
@@ -278,6 +280,9 @@ void testZeroMaskCoversDimFieldElements() {
     auto const& regs = chip.peripherals.front().registers;
     CHECK(regs[0].zeroMask == 0x0F0F0F0F, "every element of a dim field leaves zeroMask");
     CHECK(regs[1].zeroMask == 0xFFFFFFFF, "a one-to-clear dim field stays in zeroMask whole");
+    CHECK(regs[0].writeBackActsMask == 0, "plain dim fields: nothing to write as 0");
+    CHECK(regs[1].writeBackActsMask == 0xFFFFFFFF,
+          "every element of a one-to-clear dim field acts");
 }
 
 // Every element of a zeroTo* dim field is in oneMask; a field past the register is rejected.
@@ -381,6 +386,7 @@ void testReadOnlyFieldMask() {
     CHECK(reg.fields.size() == 3, "read-only fields are kept");
     CHECK(reg.fields[1].access == Access::readOnly, "read-only access parsed");
     CHECK(reg.zeroMask == 0xFFFFFFFE, "zeroMask keeps read-only bits");
+    CHECK(reg.writeBackActsMask == 0, "read-only bits are written back as read");
     CHECK(reg.oneMask == 0x00000000, "oneMask untouched by read-only fields");
 }
 
@@ -920,6 +926,8 @@ static void testWriteSemantics() {
     auto const& ctrl = chip.peripherals.front().registers[0];
     auto const& data = chip.peripherals.front().registers[1];
     CHECK(ctrl.zeroMask == 0x0000F0FA, "the oneToSet trigger joins zeroMask, `clear` does not");
+    CHECK(ctrl.writeBackActsMask == 0x00000002,
+          "the write-only oneToSet trigger must be written 0");
     CHECK(ctrl.fields[1].identity == "zero" && ctrl.fields[2].identity == "none", "identities");
     CHECK(ctrl.mustSupplyMask == 0xFFFF0000, "only the one-value range is a key");
     CHECK(!ctrl.readHasSideEffect, "no readAction in CTRL");

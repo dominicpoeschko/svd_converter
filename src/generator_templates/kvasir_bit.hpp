@@ -124,12 +124,20 @@ struct {{ upper(register.name) }} {
                         {{ dataType(register.dataType) }}
                         {% if register.writeOnlyRegister %}
                         , Kvasir::Register::WriteOnlyRegister<{{ upper(register.name) }}>
-                        {% else if writeOnlyMask and register.writeOnlyNoIdentityMask != 0 %}
+                        {% else %}
+                        {% if not register.readHasSideEffect and register.writeBackActsMask != register.zeroMask %}
+                        , Kvasir::Register::WriteBackActs<{{ hex(register.writeBackActsMask, register.dataType) }}
+                        {% endif %}
+                        {% if writeOnlyMask and register.writeOnlyNoIdentityMask != 0 %}
                         , Kvasir::Register::RmwHazard<{{ hex(register.mustSupplyMask, register.dataType) }}, {{ register.readHasSideEffect }}, {{ upper(register.name) }}, {{ hex(register.writeOnlyNoIdentityMask, register.dataType) }}>
                         {% else if register.mustSupplyMask != 0 or register.readHasSideEffect %}
                         , Kvasir::Register::RmwHazard<{{ hex(register.mustSupplyMask, register.dataType) }}, {{ register.readHasSideEffect }}, {{ upper(register.name) }}>
                         {% else if namedRegisters %}
                         , Kvasir::Register::Named<{{ upper(register.name) }}>
+                        {% endif %}
+                        {% if not register.readHasSideEffect and register.writeBackActsMask != register.zeroMask %}
+                        >
+                        {% endif %}
                         {% endif %}>;
 
     static constexpr FieldLocation<Addr, maskFromRange({{maxBitDataType(register.dataType) }}, 0), {{ makeAccess(register.access, "empty", "") }}, {{ dataType(register.dataType) }}> FULLREGISTER{};

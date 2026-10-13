@@ -181,6 +181,9 @@ struct Register {
     std::uint64_t resetValue    = 0;
     std::uint64_t zeroMask      = 0;
     std::uint64_t oneMask       = 0;
+    // the zeroMask bits a read-modify-write must write as 0: one-to-* fields, whose value read back
+    // would act again; reserved and read-only bits are written back as read (Register::WriteBackActs)
+    std::uint64_t writeBackActsMask = 0;
     // FULLREGISTER's access: readOnly when every field is, readWrite otherwise
     Access access = Access::readWrite;
     // Register::RmwHazard: the key fields' bits every write must supply, and whether a read has a
@@ -205,6 +208,7 @@ struct Register {
                                    resetValue,
                                    zeroMask,
                                    oneMask,
+                                   writeBackActsMask,
                                    access,
                                    mustSupplyMask,
                                    readHasSideEffect,
