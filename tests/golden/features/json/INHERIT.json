@@ -1,0 +1,347 @@
+{
+    "addressType": "u32",
+    "baseAddresses": [
+        {
+            "address": 1073754112,
+            "index": 0
+        }
+    ],
+    "description": "Register properties passed down (device, peripheral, cluster, register), derivedFrom by SVD name, resetMask",
+    "name": "INHERIT",
+    "registerGroups": [
+        {
+            "addressOffset": 16,
+            "description": "A dim cluster with its own size and access, and a name sanitizeName changes",
+            "dim": 2,
+            "dimIncrement": 1,
+            "name": "LANE_CFG",
+            "registers": [
+                {
+                    "access": "readWrite",
+                    "addressOffset": 0,
+                    "dataType": "u8",
+                    "description": "",
+                    "dim": 0,
+                    "dimIncrement": 0,
+                    "fields": [
+                        {
+                            "access": "readWrite",
+                            "dataType": "u8",
+                            "description": "",
+                            "dim": 0,
+                            "dimIncrement": 0,
+                            "identity": "none",
+                            "key": false,
+                            "modifiedWriteValues": "empty",
+                            "name": "SRC",
+                            "readAction": "",
+                            "repType": "normal",
+                            "resetValue": 0,
+                            "startBit": 0,
+                            "stopBit": 1,
+                            "type": "normal",
+                            "values": [],
+                            "writeOnlyAccepted": false
+                        }
+                    ],
+                    "mustSupplyMask": 0,
+                    "name": "SEL",
+                    "oneMask": 0,
+                    "readHasSideEffect": false,
+                    "resetMask": 255,
+                    "resetValue": 0,
+                    "type": "normal",
+                    "writeBackActsMask": 0,
+                    "writeOnlyNoIdentityMask": 0,
+                    "writeOnlyRegister": false,
+                    "zeroMask": 252
+                }
+            ]
+        }
+    ],
+    "registers": [
+        {
+            "access": "readOnly",
+            "addressOffset": 0,
+            "dataType": "u16",
+            "description": "Inherits the peripheral's size (16) and access (read-only)",
+            "dim": 0,
+            "dimIncrement": 0,
+            "fields": [
+                {
+                    "access": "readOnly",
+                    "dataType": "u16",
+                    "description": "",
+                    "dim": 0,
+                    "dimIncrement": 0,
+                    "identity": "zero",
+                    "key": false,
+                    "modifiedWriteValues": "empty",
+                    "name": "LEVEL",
+                    "readAction": "",
+                    "repType": "normal",
+                    "resetValue": 0,
+                    "startBit": 0,
+                    "stopBit": 3,
+                    "type": "normal",
+                    "values": [],
+                    "writeOnlyAccepted": false
+                }
+            ],
+            "mustSupplyMask": 0,
+            "name": "STATUS",
+            "oneMask": 0,
+            "readHasSideEffect": false,
+            "resetMask": 65535,
+            "resetValue": 0,
+            "type": "normal",
+            "writeBackActsMask": 0,
+            "writeOnlyNoIdentityMask": 0,
+            "writeOnlyRegister": false,
+            "zeroMask": 65535
+        },
+        {
+            "access": "readWrite",
+            "addressOffset": 2,
+            "dataType": "u16",
+            "description": "A base whose C name (displayName) differs from its SVD name",
+            "dim": 0,
+            "dimIncrement": 0,
+            "fields": [
+                {
+                    "access": "readWrite",
+                    "dataType": "u16",
+                    "description": "",
+                    "dim": 0,
+                    "dimIncrement": 0,
+                    "identity": "none",
+                    "key": false,
+                    "modifiedWriteValues": "empty",
+                    "name": "EN",
+                    "readAction": "",
+                    "repType": "normal",
+                    "resetValue": 0,
+                    "startBit": 0,
+                    "stopBit": 0,
+                    "type": "normal",
+                    "values": [],
+                    "writeOnlyAccepted": false
+                }
+            ],
+            "mustSupplyMask": 0,
+            "name": "CTRLA",
+            "oneMask": 0,
+            "readHasSideEffect": false,
+            "resetMask": 65535,
+            "resetValue": 0,
+            "type": "normal",
+            "writeBackActsMask": 0,
+            "writeOnlyNoIdentityMask": 0,
+            "writeOnlyRegister": false,
+            "zeroMask": 65534
+        },
+        {
+            "access": "readWrite",
+            "addressOffset": 6,
+            "dataType": "u16",
+            "description": "resetMask 0: no defined reset value, so no overrideDefaults",
+            "dim": 0,
+            "dimIncrement": 0,
+            "fields": [
+                {
+                    "access": "readWrite",
+                    "dataType": "u16",
+                    "description": "",
+                    "dim": 0,
+                    "dimIncrement": 0,
+                    "identity": "none",
+                    "key": false,
+                    "modifiedWriteValues": "empty",
+                    "name": "MODE",
+                    "readAction": "",
+                    "repType": "normal",
+                    "resetValue": 0,
+                    "startBit": 0,
+                    "stopBit": 1,
+                    "type": "enum",
+                    "values": [
+                        {
+                            "description": "",
+                            "name": "OFF",
+                            "value": 0
+                        },
+                        {
+                            "description": "",
+                            "name": "ON",
+                            "value": 1
+                        }
+                    ],
+                    "writeOnlyAccepted": false
+                }
+            ],
+            "mustSupplyMask": 0,
+            "name": "DIV",
+            "oneMask": 0,
+            "readHasSideEffect": false,
+            "resetMask": 0,
+            "resetValue": 0,
+            "type": "normal",
+            "writeBackActsMask": 0,
+            "writeOnlyNoIdentityMask": 0,
+            "writeOnlyRegister": false,
+            "zeroMask": 65532
+        },
+        {
+            "access": "readWrite",
+            "addressOffset": 8,
+            "dataType": "u16",
+            "description": "resetMask covers bit 1 only: the field's defined bit is checked",
+            "dim": 0,
+            "dimIncrement": 0,
+            "fields": [
+                {
+                    "access": "readWrite",
+                    "dataType": "u16",
+                    "description": "",
+                    "dim": 0,
+                    "dimIncrement": 0,
+                    "identity": "none",
+                    "key": false,
+                    "modifiedWriteValues": "empty",
+                    "name": "MODE",
+                    "readAction": "",
+                    "repType": "normal",
+                    "resetValue": 2,
+                    "startBit": 0,
+                    "stopBit": 1,
+                    "type": "enum",
+                    "values": [
+                        {
+                            "description": "",
+                            "name": "A",
+                            "value": 2
+                        },
+                        {
+                            "description": "",
+                            "name": "B",
+                            "value": 3
+                        }
+                    ],
+                    "writeOnlyAccepted": false
+                }
+            ],
+            "mustSupplyMask": 0,
+            "name": "PART",
+            "oneMask": 0,
+            "readHasSideEffect": false,
+            "resetMask": 2,
+            "resetValue": 2,
+            "type": "normal",
+            "writeBackActsMask": 0,
+            "writeOnlyNoIdentityMask": 0,
+            "writeOnlyRegister": false,
+            "zeroMask": 65532
+        },
+        {
+            "access": "readOnly",
+            "addressOffset": 10,
+            "dataType": "u16",
+            "description": "No fields, inherits read-only: FULLREGISTER is read-only",
+            "dim": 0,
+            "dimIncrement": 0,
+            "fields": [],
+            "mustSupplyMask": 0,
+            "name": "ID",
+            "oneMask": 0,
+            "readHasSideEffect": false,
+            "resetMask": 65535,
+            "resetValue": 0,
+            "type": "normal",
+            "writeBackActsMask": 0,
+            "writeOnlyNoIdentityMask": 0,
+            "writeOnlyRegister": false,
+            "zeroMask": 65535
+        },
+        {
+            "access": "writeOnly",
+            "addressOffset": 12,
+            "dataType": "u16",
+            "description": "No fields, write-only: FULLREGISTER is write-only",
+            "dim": 0,
+            "dimIncrement": 0,
+            "fields": [],
+            "mustSupplyMask": 0,
+            "name": "TXDATA",
+            "oneMask": 0,
+            "readHasSideEffect": false,
+            "resetMask": 65535,
+            "resetValue": 0,
+            "type": "normal",
+            "writeBackActsMask": 0,
+            "writeOnlyNoIdentityMask": 0,
+            "writeOnlyRegister": false,
+            "zeroMask": 65535
+        },
+        {
+            "access": "writeOnly",
+            "addressOffset": 14,
+            "dataType": "u16",
+            "description": "No fields, writeOnce: FULLREGISTER is write-only",
+            "dim": 0,
+            "dimIncrement": 0,
+            "fields": [],
+            "mustSupplyMask": 0,
+            "name": "ONCE",
+            "oneMask": 0,
+            "readHasSideEffect": false,
+            "resetMask": 65535,
+            "resetValue": 0,
+            "type": "normal",
+            "writeBackActsMask": 0,
+            "writeOnlyNoIdentityMask": 0,
+            "writeOnlyRegister": false,
+            "zeroMask": 65535
+        },
+        {
+            "access": "readWrite",
+            "addressOffset": 4,
+            "dataType": "u16",
+            "description": "A base whose C name (displayName) differs from its SVD name",
+            "dim": 0,
+            "dimIncrement": 0,
+            "fields": [
+                {
+                    "access": "readWrite",
+                    "dataType": "u16",
+                    "description": "",
+                    "dim": 0,
+                    "dimIncrement": 0,
+                    "identity": "none",
+                    "key": false,
+                    "modifiedWriteValues": "empty",
+                    "name": "EN",
+                    "readAction": "",
+                    "repType": "normal",
+                    "resetValue": 0,
+                    "startBit": 0,
+                    "stopBit": 0,
+                    "type": "normal",
+                    "values": [],
+                    "writeOnlyAccepted": false
+                }
+            ],
+            "mustSupplyMask": 0,
+            "name": "CTRLB",
+            "oneMask": 0,
+            "readHasSideEffect": false,
+            "resetMask": 65535,
+            "resetValue": 0,
+            "type": "normal",
+            "writeBackActsMask": 0,
+            "writeOnlyNoIdentityMask": 0,
+            "writeOnlyRegister": false,
+            "zeroMask": 65534
+        }
+    ],
+    "type": "normal"
+}

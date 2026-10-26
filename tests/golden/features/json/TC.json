@@ -1,0 +1,59 @@
+{
+    "addressType": "u32",
+    "baseAddresses": [
+        {
+            "address": 1073745920,
+            "index": 0
+        },
+        {
+            "address": 1073746944,
+            "index": 1
+        }
+    ],
+    "description": "A peripheral with a derived instance",
+    "name": "TC",
+    "registerGroups": [],
+    "registers": [
+        {
+            "access": "readWrite",
+            "addressOffset": 0,
+            "dataType": "u16",
+            "description": "",
+            "dim": 0,
+            "dimIncrement": 0,
+            "fields": [
+                {
+                    "access": "readWrite",
+                    "dataType": "u16",
+                    "description": "",
+                    "dim": 0,
+                    "dimIncrement": 0,
+                    "identity": "none",
+                    "key": false,
+                    "modifiedWriteValues": "empty",
+                    "name": "COUNT",
+                    "readAction": "",
+                    "repType": "normal",
+                    "resetValue": 0,
+                    "startBit": 0,
+                    "stopBit": 15,
+                    "type": "normal",
+                    "values": [],
+                    "writeOnlyAccepted": false
+                }
+            ],
+            "mustSupplyMask": 0,
+            "name": "COUNT",
+            "oneMask": 0,
+            "readHasSideEffect": false,
+            "resetMask": 65535,
+            "resetValue": 0,
+            "type": "normal",
+            "writeBackActsMask": 0,
+            "writeOnlyNoIdentityMask": 0,
+            "writeOnlyRegister": false,
+            "zeroMask": 0
+        }
+    ],
+    "type": "cluster"
+}

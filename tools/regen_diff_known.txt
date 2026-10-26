@@ -1,0 +1,3 @@
+# regen_diff.py --compile: SVDs whose instantiated headers are known not to compile, one per line:
+# <svd-id> <reason>. An entry that compiles again is reported, so the list only shrinks.
+# regen_diff.py --json-check: known mask findings, `<svd-id>:<PERIPH.REG[.FIELD]> <reason>`.

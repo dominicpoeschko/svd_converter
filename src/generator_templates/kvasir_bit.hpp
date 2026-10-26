@@ -1,7 +1,7 @@
 #pragma once
 
 #include "inja_wrapper.hpp"
-#include "svd_types.hpp"
+#include "view_model.hpp"
 
 #include <format>
 #include <string>
@@ -13,15 +13,25 @@ namespace Generator { namespace Kvasir {
 #include "kvasir/Register/Register.hpp"
 #include "kvasir/Register/Types.hpp"
 #include "kvasir/Register/Utility.hpp"
+#include "kvasir/Register/Views.hpp"
 
 #include <array>
 #include <cstdint>
 #include <string_view>
-#if __has_include("remote_fmt/catalog.hpp")
-    #include "remote_fmt/catalog.hpp"
-    #include "string_constant/string_constant.hpp"
-#endif
+#include <utility>
 
+// Each register struct holds facts only: Addr (address, write-ignored masks, write semantics), resetValue,
+// FULLREGISTER, its fields with their enums (and per enumerated field the names of its values, <FIELD>ValueNames),
+// `fields` (every field location, a dim field once per element), fmt_string, field_names and field_dims (the
+// dimensions in front of the fields in fmt_string: a group's and a dim register's index). What follows from them -
+// the default values, the masks, the read of every field, the value names' catalog ids - is derived by the SDK
+// (kvasir/Register/Views.hpp, Fields.hpp, RegisterFmt.hpp) only where it is used; the members overrideDefaults (where
+// every writable field has a defined reset value and every enum field resets to a named value: a type list with
+// literal actions, a bundle for apply() with a runtime value), apply_fields and apply_fields_with_dim are one-line
+// calls into it (the executing ones always inlined: a RAM function may use them).
+// `glaze_reflect = false`: a register is no reflectable struct, so a logged register prints through RegisterFmt's
+// formatter (brought in with the log) or does not compile - never through a reflection formatter (aglio's) with other
+// text.
 //{{ description }}
 namespace Kvasir::Peripheral::{{ upper(name) }} {
     using Kvasir::Register::Address;
@@ -33,6 +43,9 @@ namespace Kvasir::Peripheral::{{ upper(name) }} {
     using Kvasir::Register::ReadOnlyAccess;
     using Kvasir::Register::value;
 
+    {# A peripheral without registers names only interrupts (RP2350 SPARE_IRQ, base address 0): no
+       Registers<>, whose instance would fail its own "Wrong Instance?" assert. #}
+    {% if length(registers) > 0 or length(registerGroups) > 0 %}
     //{{ description }}
     template<unsigned Instance {% if type == "normal" %} = 0 {% endif %}>
     struct Registers{
@@ -61,13 +74,17 @@ namespace Kvasir::Peripheral::{{ upper(name) }} {
         {% endfor %}
 
     };
+    {% endif %}
 }
 )";
 
-    // The interrupt vectors' names, for compile errors that name an interrupt (Kvasir_SDK StartUp diagnostics):
-    // constant-expression only, no flash.
+    // The interrupt vectors' names, for compile errors that name an interrupt (Kvasir_SDK StartUp diagnostics), and
+    // the SDK's DeviceInterruptNames hook specialised from them: constant-expression only, no flash.
     static constexpr auto InterruptNamesTemplate = R"(
 #pragma once
+#include "kvasir/Common/Tags.hpp"
+#include "kvasir/StartUp/InterruptNames.hpp"
+
 #include <array>
 #include <cstdint>
 #include <string_view>
@@ -84,6 +101,40 @@ inline constexpr std::array<InterruptName, {{ length(interrupts) }}> interruptNa
     { {{ irq.value }}, "{{ irq.name }}" },
 {% endfor %}
 } };
+}
+
+// the names for Startup's reports (Kvasir_SDK StartUp/InterruptNames.hpp's hook)
+template<typename... Ts>
+struct Kvasir::Startup::Diagnostics::DeviceInterruptNames<Kvasir::Tag::User, Ts...> {
+    static consteval std::string_view of(int index) {
+        for(auto const& irq : ::Kvasir::Peripheral::interruptNames) {
+            if(static_cast<int>(irq.index) == index) { return irq.name; }
+        }
+        return {};
+    }
+};
+)";
+
+    static constexpr auto DeviceInterruptsTemplate = R"(
+#pragma once
+#include "InterruptNames.hpp"
+#include "kvasir/Common/Interrupt.hpp"
+
+#include <array>
+
+// the device interrupts of {{ name }} from its SVD, as Nvic indexes (0 = the first after the core's exceptions); a
+// name is the SVD's, lower-cased, every IRQ token dropped
+namespace Kvasir::Peripheral {
+struct DeviceInterrupts {
+{% for irq in deviceInterrupts %}
+    static constexpr ::Kvasir::Nvic::Index<{{ irq.value }}> {{ irq.cppName }}{};   // {{ irq.name }}
+{% endfor %}
+};
+
+// one past the highest line
+inline constexpr int interruptEnd = {{ interruptEnd }};
+// the indexes below interruptEnd that no line names
+inline constexpr std::array<int, {{ length(interruptGaps) }}> interruptGaps{ {{ join(interruptGaps, ", ") }} };
 }
 )";
 
@@ -104,362 +155,154 @@ struct {{ upper(registerGroup.name) }} {
 };
 )";
 
+    // The templates are a transcription of the view model (view_model.hpp): every decision - the
+    // mode argument, which fields have defaults and what they write, the dim-expanded field lists,
+    // the log text - is computed there and unit-tested; the template only prints it.
     static constexpr auto RegisterTemplate = R"delim(
 //{{ register.description }}
-{% if register.type == "cluster" %}
+{% if register.cluster %}
 template<unsigned Index>
 {% endif %}
-struct {{ upper(register.name) }} {
-{% if register.type == "cluster" %}
+struct {{ register.cppName }} {
+{% if register.cluster %}
     static_assert(Index < {{ register.dim }});
 {% endif %}
-    // ResetValue: {{ hex(register.resetValue, register.dataType) }}
     using Addr = Address< {{ baseAddrString }}
                             + {{ hex(register.addressOffset, "min") }}
-                            {% if register.type != "normal" %}
+                            {% if register.cluster %}
                                 + (Index * {{ hex(register.dimIncrement, "min") }})
                             {% endif %},
                         {{ hex(register.zeroMask, register.dataType) }},
                         {{ hex(register.oneMask, register.dataType) }},
                         {{ dataType(register.dataType) }}
-                        {% if register.writeOnlyRegister %}
-                        , Kvasir::Register::WriteOnlyRegister<{{ upper(register.name) }}>
-                        {% else %}
-                        {% if not register.readHasSideEffect and register.writeBackActsMask != register.zeroMask %}
-                        , Kvasir::Register::WriteBackActs<{{ hex(register.writeBackActsMask, register.dataType) }}
-                        {% endif %}
-                        {% if writeOnlyMask and register.writeOnlyNoIdentityMask != 0 %}
-                        , Kvasir::Register::RmwHazard<{{ hex(register.mustSupplyMask, register.dataType) }}, {{ register.readHasSideEffect }}, {{ upper(register.name) }}, {{ hex(register.writeOnlyNoIdentityMask, register.dataType) }}>
-                        {% else if register.mustSupplyMask != 0 or register.readHasSideEffect %}
-                        , Kvasir::Register::RmwHazard<{{ hex(register.mustSupplyMask, register.dataType) }}, {{ register.readHasSideEffect }}, {{ upper(register.name) }}>
-                        {% else if namedRegisters %}
-                        , Kvasir::Register::Named<{{ upper(register.name) }}>
-                        {% endif %}
-                        {% if not register.readHasSideEffect and register.writeBackActsMask != register.zeroMask %}
-                        >
-                        {% endif %}
-                        {% endif %}>;
+                        {% for line in register.modeLines %}
+                        {{ line }}
+                        {% endfor %}>;
 
-    static constexpr FieldLocation<Addr, maskFromRange({{maxBitDataType(register.dataType) }}, 0), {{ makeAccess(register.access, "empty", "") }}, {{ dataType(register.dataType) }}> FULLREGISTER{};
+    static constexpr {{ dataType(register.dataType) }} resetValue = {{ hex(register.resetValue, register.dataType) }};
+
+    static constexpr FieldLocation<Addr, maskFromRange({{maxBitDataType(register.dataType) }}, 0), {{ register.accessText }}, {{ dataType(register.dataType) }}> FULLREGISTER{};
 
     {% for field in register.fields %}
-        {% if field.type == "enum" %}
-            {% include "Enum" %}
-        {% else %}
             {% include "Field" %}
-        {% endif %}
     {% endfor %}
 
-    {% if hasDefaults(register) %}
-    using default_values = decltype(MPL::list(
-    {% for field in defaultFields(register) %}
-        {% if field.type == "enum" %}
-            {% if field.repType == "cluster" %}
-                {% for i in range(field.dim) %}
-                    write( {{ upper(field.name)  }}<{{ i }}>::{{ upper(field.name) }}ValC::{{ enumResetValue(field.resetValue, field.values) }})
-                    {% if not loop/is_last %}
-                        ,
-                    {% endif %}
-                {% endfor %}
-            {% else %}
-                write( {{ upper(field.name) }}ValC::{{ enumResetValue(field.resetValue, field.values) }})
-            {% endif %}
-        {% else %}
-            {% if field.repType == "cluster" %}
-                {% for i in range(field.dim) %}
-                    write( {{ upper(field.name) }}<{{ i }}>::{{ lower(field.name) }}, value<{{ dataType(field.dataType) }}, {{ field.resetValue }}>() )
-                    {% if not loop/is_last %}
-                        ,
-                    {% endif %}
-                {% endfor %}
-            {% else %}
-                write( {{ lower(field.name) }}, value<{{ dataType(field.dataType) }}, {{ field.resetValue }}>() )
-            {% endif %}
-        {% else %}
-        {% endif %}
-        {% if not loop/is_last %}
-            ,
-        {% endif %}
+    using fields = Kvasir::Register::Fields<
+    {% for e in register.elements %}
+        decltype({{ e.expr }}){% if not loop.is_last %},{% endif %}
+
     {% endfor %}
-    ));
+    >;
+
+    {% if register.hasDefaults %}
     template<typename... Actions>
-    static constexpr auto overrideDefaults(Actions const&... actions){
-        return Register::overrideDefaults<default_values>::value(actions...);
-    }
-    template<typename... Actions>
-    static constexpr auto overrideDefaultsRuntime(Actions const&... actions){
-        return Register::overrideDefaultsRuntime<default_values>::exec(actions...);
+    [[gnu::always_inline]] static constexpr auto overrideDefaults(Actions const&... actions){
+        return Kvasir::Register::overrideDefaults<Kvasir::Register::DefaultValues<{{ register.cppName }}>>(actions...);
     }
 
     {% endif %}
+    static constexpr std::string_view fmt_string{"{{ register.fmtString }}"};
+    static constexpr bool glaze_reflect = false;
 
-    static constexpr std::string_view fmt_string{"{{ lower(name) }}::{% set noNL=1 %}
-    {% if inRegisterGroup %}
-{{ lower(registerGroup.name) }}[{}]::{% set noNL=1 %}
-    {% endif %}
-{{ lower(register.name) }}{% set noNL=1 %}
-    {% if register.type == "cluster" %}
-[{}]{% set noNL=1 %}
-    {% endif %}
-(\n{% set noNL=1 %}
-    {% for field in register.fields %}
-        {% if field.type == "enum" %}
-            {% set fmt="{}" %}
-        {% else %}
-            {% set fmt="0x{:x}" %}
-        {% endif %}
-        {% if field.repType == "cluster" %}
-            {% for i in range(field.dim) %}
-\"{{ lower(field.name)  }}[{{ i }}]\": {{ fmt }}{% set noNL=1 %}
-                {% if not loop/is_last -%}
-                    \n{% set noNL=1 %}
-                {% endif %}
-            {% endfor %}
-        {% else %}
-\"{{ lower(field.name) }}\": {{ fmt }}{% set noNL=1 %}
-        {% endif %}
-        {% if not loop/is_last -%}
-            \n{% set noNL=1 %}
-        {% endif %}
-    {% endfor %})"};
-
-    {% if length(register.fields) > 0 %}
-    // The fields again, as data: name and mask per field, in the order of fmt_string and
-    // apply_fields. A formatter can name a field with these without the register layout
-    // being restated anywhere else (Kvasir::Register::Flags in RegisterFmt.hpp does).
-    // Both are constant-expression only - indexed at compile time they cost no flash.
+    {% if length(register.elements) > 0 %}
     static constexpr auto field_names = std::to_array<std::string_view>({
-    {% for field in register.fields %}
-        {% if field.repType == "cluster" %}
-            {% for i in range(field.dim) %}
-                "{{ lower(field.name) }}[{{ i }}]",
-            {% endfor %}
-        {% else %}
-            "{{ lower(field.name) }}",
-        {% endif %}
+    {% for e in register.elements %}
+        "{{ e.name }}",
     {% endfor %}
     });
 
-    static constexpr auto field_masks = std::to_array<unsigned>({
-    {% for field in register.fields %}
-        {% if field.repType == "cluster" %}
-            {% for i in range(field.dim) %}
-                {{ upper(field.name) }}<{{ i }}>::{{ lower(field.name) }}.Mask,
-            {% endfor %}
-        {% else %}
-            {{ lower(field.name) }}.Mask,
-        {% endif %}
-    {% endfor %}
-    });
-
-    // What each field can be written as without changing it (svd_converter identityOf), for
-    // Kvasir::Register::Detail::masksMatchFields: the register's masks must follow from these.
-    static constexpr auto field_identities = std::to_array<Kvasir::Register::Detail::Identity>({
-    {% for field in register.fields %}
-        {% if field.repType == "cluster" %}
-            {% for i in range(field.dim) %}
-                Kvasir::Register::Detail::Identity::{{ field.identity }},
-            {% endfor %}
-        {% else %}
-            Kvasir::Register::Detail::Identity::{{ field.identity }},
-        {% endif %}
-    {% endfor %}
-    });
-#ifdef KVASIR_REGISTER_VERIFY_MASKS
-    static_assert(Kvasir::Register::Detail::masksMatchFields<Addr>(field_masks, field_identities),
-                  "the register's write-ignored masks do not follow from its fields");
-#endif
-
-    // The dimensions in front of the fields in fmt_string (a group's and a cluster's index), as
-    // data, and per field the catalog id of its value's name where the field is an enumeration
-    // (0 for a value without one, nullptr for a number). Kvasir/Register/RegisterFmt.hpp logs a
-    // register as one loop over field_masks with these, instead of a copy of the whole argument
-    // list per register. The ids need remote_fmt's catalog, so only with it.
-    static constexpr std::array<unsigned, 0{% if inRegisterGroup %} + 1{% endif %}{% if register.type == "cluster" %} + 1{% endif %}> field_dims{ {% if inRegisterGroup %}GroupIndex,{% endif %}{% if register.type == "cluster" %}Index,{% endif %} };
-#if __has_include("remote_fmt/catalog.hpp")
-    // Function templates, so that nothing of this is compiled for a register nobody logs; the
-    // ids are generated before the link from the uses that remain (clang would warn about the
-    // declarations it sees here).
-    #ifdef __clang__
-        #pragma clang diagnostic push
-        #pragma clang diagnostic ignored "-Wundefined-func-template"
-    #endif
-    {% for field in register.fields %}
-        {% if field.type == "enum" %}
-    template<typename = void>
-    static remote_fmt::catalog_id fieldName_{{ lower(field.name) }}(unsigned value) {
-            {% for value in field.values %}
-        if(value == {{ value.value }}) { return remote_fmt::catalog<decltype(SC_LIFT("{{ lower(value.name) }}"))>(); }
-            {% endfor %}
-        return 0;
-    }
-        {% endif %}
-    {% endfor %}
-    template<typename = void>
-    static constexpr auto fieldNameOf() {
-        return std::to_array<remote_fmt::catalog_id (*)(unsigned)>({
-    {% for field in register.fields %}
-        {% if field.repType == "cluster" %}
-            {% for i in range(field.dim) %}
-                {% if field.type == "enum" %}&fieldName_{{ lower(field.name) }}<>,{% else %}nullptr,{% endif %}
-            {% endfor %}
-        {% else %}
-            {% if field.type == "enum" %}&fieldName_{{ lower(field.name) }}<>,{% else %}nullptr,{% endif %}
-        {% endif %}
-    {% endfor %}
-        });
-    }
-    #ifdef __clang__
-        #pragma clang diagnostic pop
-    #endif
-#endif
+    static constexpr std::array<unsigned, {{ register.dimsCount }}> field_dims{ {% if inRegisterGroup %}GroupIndex,{% endif %}{% if register.cluster %}Index,{% endif %} };
     {% endif %}
 
     template<typename Func>
-    static constexpr auto apply_fields(Func&& func){
-        {% if length(register.fields) > 0  %}
-            auto const regs = apply(read(
-        {% endif %}
-           {% for field in register.fields %}
-                {% if field.repType == "cluster" %}
-                    {% for i in range(field.dim) %}
-                        {{ upper(field.name) }}<{{ i }}>::{{ lower(field.name) }}
-                        {% if not loop/is_last -%}
-                            ,
-                        {% endif %}
-                    {% endfor %}
-                {% else %}
-                    {{ lower(field.name) }}
-                {% endif %}
-                {% if not loop/is_last -%}
-                    ,
-                {% endif %}
-            {% endfor %}
-        {% if length(register.fields) > 0  %}
-            ));
-        {% endif %}
-
-        {% set getIndex = 0 %}
-        return std::invoke(std::forward<Func>(func)
-            {% if length(register.fields) > 0  %}
-                ,
-            {% endif %}
-            {% for field in register.fields %}
-                {% if field.type == "enum" %}
-                    {% set cast_t=upper(field.name) + "Val" %}
-                {% else %}
-                    {% set cast_t=dataType(field.dataType) %}
-                {% endif %}
-                {% if field.repType == "cluster" %}
-                    {% for i in range(field.dim) %}
-                        {% if field.type == "enum" %}
-                            static_cast<typename {{ upper(field.name) }}<{{ i }}>::{{ upper(field.name) }}Val>(get<{{ getIndex }}>(regs))
-                        {% else %}
-                            static_cast<{{ cast_t }}>(get<{{ getIndex }}>(regs))
-                        {% endif %}
-                        {% set getIndex = getIndex + 1 %}
-                        {% if not loop/is_last -%}
-                            ,
-                        {% endif %}
-                    {% endfor %}
-                {% else %}
-                    static_cast<{{ cast_t }}>(get<{{ getIndex }}>(regs))
-                    {% set getIndex = getIndex + 1 %}
-                {% endif %}
-                {% if not loop/is_last -%}
-                    ,
-                {% endif %}
-            {% endfor %}
-        );
+    [[gnu::always_inline]] static constexpr auto apply_fields(Func&& func){
+        return Kvasir::Register::applyFields<{{ register.cppName }}>(std::forward<Func>(func));
     }
     template<typename Func>
     static constexpr auto apply_fields_with_dim(Func&& func) {
-        return apply_fields([&](auto&&... fields) {
-            return std::invoke(std::forward<Func>(func),
-            {% if inRegisterGroup %}
-                GroupIndex,
-            {% endif %}
-            {% if register.type == "cluster" %}
-                Index,
-            {% endif %}
-            fields...);
-        });
+        return Kvasir::Register::applyFieldsWithDim<{{ register.cppName }}>(std::forward<Func>(func));
     }
 };
 )delim";
 
-    static constexpr auto EnumTemplate = R"(
+    // One field: a number, or an enumeration with its values (ValC). A field cluster (dim) is a
+    // template over its index.
+    static constexpr auto FieldTemplate = R"(
+{% if field.isEnum %}
+// the names of {{ lower(field.name) }}'s values (Kvasir::Register::ValueName), found through its enum
+struct {{ upper(field.name) }}ValueNames {
+    static consteval auto get() {
+        return std::to_array<Kvasir::Register::ValueName>({
+    {% for value in field.values %}
+            { {{ value.value }}, "{{ lower(value.name) }}" },
+    {% endfor %}
+        });
+    }
+};
+{% endif %}
 //{{ field.description }}
-{% if field.repType == "cluster" %}
+{% if field.cluster %}
 template<unsigned FieldIndex>
 struct {{ upper(field.name) }} {
     static_assert(FieldIndex < {{ field.dim }});
 {% endif %}
+{% if field.isEnum %}
 
 enum class {{ upper(field.name) }}Val : {{ dataType(field.dataType) }} {
     {% for value in field.values %}
     {{ lower(value.name) }} = {{ value.value }}, //{{ value.description }}
     {% endfor %}
 };
+friend constexpr {{ upper(field.name) }}ValueNames kvasirValueNames({{ upper(field.name) }}Val) { return {}; }
 
-// ResetValue: {{ enumResetValue(field.resetValue, field.values) }} {{ field.resetValue }}
+{% if field.hasReset %}
+// ResetValue: {{ field.resetName }} {{ field.resetValue }}
+{% else %}
+// ResetValue: undefined (outside resetMask)
+{% endif %}
 static constexpr FieldLocation<Addr,
                                maskFromRange(
                                 {{ field.stopBit }}
-                                {% if field.repType != "normal" %}
+                                {% if field.cluster %}
                                     + (FieldIndex * {{ field.dimIncrement }})
                                 {% endif %},
                                 {{ field.startBit }}
-                                {% if field.repType != "normal" %}
+                                {% if field.cluster %}
                                     + (FieldIndex * {{ field.dimIncrement }})
                                 {% endif %}),
-                               {{ makeAccess(field.access, field.modifiedWriteValues, field.readAction) }},
+                               {{ field.accessText }},
                                {{ upper(field.name) }}Val>
     {{ lower(field.name) }}{};
 
-{# The field is named through its enclosing struct: a value with the field's own name
-   (SOURCE::clk_sys and CLK_SYSValC::clk_sys) would otherwise change the meaning of the
-   unqualified name inside ValC, which gcc 16 refuses (-Wchanges-meaning). #}
-{% if field.repType == "cluster" %}
-    {% set fieldOwner = upper(field.name) %}
-{% else %}
-    {% set fieldOwner = upper(register.name) %}
-{% endif %}
 struct {{ upper(field.name) }}ValC{
     {% for value in field.values %}
-    static constexpr FieldValue<typename decltype({{ fieldOwner }}::{{ lower(field.name) }})::type,
+    static constexpr FieldValue<typename decltype({{ field.owner }}::{{ lower(field.name) }})::type,
                                 {{ upper(field.name) }}Val::{{ lower(value.name) }}>
                                 {{ lower(value.name) }}{};
     {% endfor %}
 };
 
-{% if field.repType == "cluster" %}
-};
-{% endif %}
-)";
-
-    static constexpr auto FieldTemplate = R"(
-//{{ field.description }}
-{% if field.repType == "cluster" %}
-template<unsigned FieldIndex>
-struct {{ upper(field.name) }} {
-    static_assert(FieldIndex < {{ field.dim }});
-{% endif %}
+{% else %}
+{% if field.hasReset %}
 // ResetValue: {{ field.resetValue }}
+{% else %}
+// ResetValue: undefined (outside resetMask)
+{% endif %}
 static constexpr FieldLocation<Addr,
               maskFromRange(
                 {{ field.stopBit }}
-                {% if field.repType != "normal" %}
+                {% if field.cluster %}
                     + (FieldIndex * {{ field.dimIncrement }})
                 {% endif %},
                 {{ field.startBit }}
-                {% if field.repType != "normal" %}
+                {% if field.cluster %}
                     + (FieldIndex * {{ field.dimIncrement }})
                 {% endif %}),
-              {{ makeAccess(field.access, field.modifiedWriteValues, field.readAction) }},
+              {{ field.accessText }},
               {{ dataType(field.dataType) }}>
     {{ lower(field.name) }}{};
-{% if field.repType == "cluster" %}
+{% endif %}
+{% if field.cluster %}
 };
 {% endif %}
 )";
@@ -472,29 +315,11 @@ static constexpr FieldLocation<Addr,
         env.set_lstrip_blocks(true);
 
         env.add_callback("hex", 2, [](inja::Arguments& args) {
-            auto number   = args.at(0)->get<std::uint64_t>();
-            auto dataType = args.at(1)->get<std::string>();
-
-            unsigned width{};
-            if(dataType == "u8" || dataType == "b" || dataType == "min") {
-                width = 2;
-            } else if(dataType == "u16") {
-                width = 4;
-            } else if(dataType == "u32") {
-                width = 8;
-            } else if(dataType == "u64") {
-                width = 16;
-            } else {
-                throw std::runtime_error("hex failed");
-            }
-
-            return std::vformat("0x{:0{}X}", std::make_format_args(number, width));
+            return ViewModel::hex(args.at(0)->get<std::uint64_t>(), args.at(1)->get<std::string>());
         });
 
         env.add_callback("dataType", 1, [](inja::Arguments& args) {
             auto dataType = args.at(0)->get<std::string>();
-
-            if(dataType == "b") { return std::string{"bool"}; }
 
             if(dataType != "u8" && dataType != "u16" && dataType != "u32" && dataType != "u64") {
                 throw std::runtime_error(dataType + " dataType failed");
@@ -508,7 +333,7 @@ static constexpr FieldLocation<Addr,
         env.add_callback("maxBitDataType", 1, [](inja::Arguments& args) {
             auto dataType = args.at(0)->get<std::string>();
 
-            if(dataType == "u8" || dataType == "b") { return std::string{"7"}; }
+            if(dataType == "u8") { return std::string{"7"}; }
             if(dataType == "u16") { return std::string{"15"}; }
             if(dataType == "u32") { return std::string{"31"}; }
             if(dataType == "u64") { return std::string{"63"}; }
@@ -516,87 +341,17 @@ static constexpr FieldLocation<Addr,
             throw std::runtime_error(dataType + " maxBitDataType failed");
         });
 
-        env.add_callback("enumResetValue", 2, [](inja::Arguments& args) {
-            auto value  = args.at(0)->get<std::uint64_t>();
-            auto values = args.at(1);
-
-            std::string foundName;
-            for(auto const& enumValue : *values) {
-                if(enumValue["value"].get<std::uint64_t>() == value) {
-                    foundName = enumValue["name"].get<std::string>();
-                    break;
-                }
-            }
-
-            if(foundName.empty()) { return std::string{"???"}; }
-
-            std::ranges::transform(foundName, foundName.begin(), [](auto character) {
-                return std::tolower(character);
-            });
-
-            return foundName;
-        });
-
-        // The fields default_values writes: every writable one. A read-only field has no
-        // default to write (the hardware ignores it, and Register::write refuses it); its
-        // bits are in the Address's zero-ignored mask instead, so overrideDefaults still
-        // covers the register with one plain write.
-        env.add_callback("defaultFields", 1, [](inja::Arguments& args) {
-            auto       reg    = args.at(0)->get<Register>();
-            inja::json fields = inja::json::array();
-            for(auto const& field : reg.fields) {
-                if(field.access != Access::readOnly) { fields.push_back(field); }
-            }
-            return fields;
-        });
-
-        // default_values exists when there is something to write and every enum field
-        // among them resets to one of its named values.
-        env.add_callback("hasDefaults", 1, [](inja::Arguments& args) {
-            auto reg      = args.at(0)->get<Register>();
-            bool anyField = false;
-            for(auto const& field : reg.fields) {
-                if(field.access == Access::readOnly) { continue; }
-                anyField   = true;
-                bool valid = false;
-                for(auto const& value : field.values) {
-                    if(field.resetValue == value.value) {
-                        valid = true;
-                        break;
-                    }
-                }
-                if(!valid && !field.values.empty()) { return false; }
-            }
-
-            return anyField;
-        });
-
-        // The field's full write semantics. The plain kinds keep their short names (most fields;
-        // the generated headers stay readable), everything else is the fully qualified Access<>,
-        // so a peripheral with something called Access in scope cannot capture it.
-        env.add_callback("makeAccess", 3, [](inja::Arguments& args) {
-            auto const access = args.at(0)->get<std::string>();   // "readWrite", ...
-            auto const mwv    = args.at(1)->get<std::string>();   // "empty", "oneToClear", ...
-            auto const ra     = args.at(2)->get<std::string>();   // "", "clear", ...
-            if(mwv == "empty" && ra.empty()
-               && (access == "readWrite" || access == "readOnly" || access == "writeOnly"))
-            {
-                auto s = access;
-                s[0]   = static_cast<char>(std::toupper(s[0]));
-                return s + "Access";
-            }
-            return "Kvasir::Register::Access<Kvasir::Register::AccessType::" + access
-                 + ", Kvasir::Register::ReadActionType::"
-                 + (ra.empty() ? std::string{"normal"} : ra)
-                 + ", Kvasir::Register::ModifiedWriteValueType::"
-                 + (mwv == "empty" ? std::string{"normal"} : mwv) + ">";
-        });
-
         env.include_template("RegisterGroup", env.parse(RegisterGroupTemplate));
         env.include_template("Register", env.parse(RegisterTemplate));
-        env.include_template("Enum", env.parse(EnumTemplate));
         env.include_template("Field", env.parse(FieldTemplate));
         return env;
+    }
+
+    // A peripheral's header: the template over the view model (view_model.hpp) of its JSON.
+    inline std::string render(inja::Environment&   env,
+                              inja::json const&    peripheral,
+                              RenderOptions const& options) {
+        return env.render(PeripheralTemplate, ViewModel::peripheralView(peripheral, options));
     }
 
 }}   // namespace Generator::Kvasir

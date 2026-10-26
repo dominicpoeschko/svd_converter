@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The golden fixture: one SVD with every construct the generators handle. Its expected raw output is
+     checked in under golden/features/ (tests/CMakeLists.txt, golden_*), and Kvasir_SDK/tests compiles the
+     generated headers against the Register layer (kvasir_test_generated_registers). Every write-only field
+     is classified, so the write-only guard's error profile converts it with exit 0. A change here changes
+     the expected files: regenerate them with golden/update.cmake and read the diff. -->
+<device>
+  <name>FEATURES</name>
+  <description>svd_converter golden fixture</description>
+  <width>32</width>
+  <size>32</size>
+  <access>read-write</access>
+  <peripherals>
+    <peripheral>
+      <name>CTRLP</name>
+      <description>Plain peripheral: one instance, every kind of register</description>
+      <baseAddress>0x40000000</baseAddress>
+      <interrupt><name>CTRLP</name><value>0</value></interrupt>
+      <registers>
+        <register>
+          <name>CTRL</name>
+          <description>Enum field, plain field, an accepted write-only strobe next to them</description>
+          <addressOffset>0x00</addressOffset>
+          <resetValue>0x00000002</resetValue>
+          <fields>
+            <field><name>ENABLE</name><description>Enable</description><bitRange>[0:0]</bitRange></field>
+            <field>
+              <name>MODE</name><description>Operating mode</description><bitRange>[3:1]</bitRange>
+              <enumeratedValues>
+                <enumeratedValue><name>OFF</name><description>Off</description><value>0</value></enumeratedValue>
+                <enumeratedValue><name>SLOW</name><description>Slow</description><value>1</value></enumeratedValue>
+                <enumeratedValue><name>FAST</name><description>Fast</description><value>2</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>SWRST</name><description>Software reset</description><bitRange>[4:4]</bitRange>
+              <access>write-only</access>
+              <!-- Kvasir: write-only accepted: the fixture's accepted strobe -->
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>INTFLAG</name>
+          <description>8-bit register of write-one-to-clear flags</description>
+          <addressOffset>0x04</addressOffset>
+          <size>8</size>
+          <fields>
+            <field><name>READY</name><bitRange>[0:0]</bitRange><modifiedWriteValues>oneToClear</modifiedWriteValues></field>
+            <field><name>ERROR</name><bitRange>[1:1]</bitRange><modifiedWriteValues>oneToClear</modifiedWriteValues></field>
+          </fields>
+        </register>
+        <register>
+          <name>TRIGGER</name>
+          <description>16-bit register: a write-only trigger whose 0 does nothing, toggle and zero-to-clear fields</description>
+          <addressOffset>0x08</addressOffset>
+          <size>16</size>
+          <fields>
+            <field><name>START</name><bitRange>[0:0]</bitRange><access>write-only</access><modifiedWriteValues>oneToSet</modifiedWriteValues></field>
+            <field><name>FLIP</name><bitRange>[1:1]</bitRange><modifiedWriteValues>oneToToggle</modifiedWriteValues></field>
+            <field><name>DONE</name><bitRange>[2:2]</bitRange><modifiedWriteValues>zeroToClear</modifiedWriteValues></field>
+            <field><name>LEVEL</name><bitRange>[11:8]</bitRange></field>
+          </fields>
+        </register>
+        <register>
+          <name>KEYREG</name>
+          <description>A key field: every write must carry it</description>
+          <addressOffset>0x0C</addressOffset>
+          <fields>
+            <field>
+              <name>VALUE</name><bitRange>[7:0]</bitRange>
+            </field>
+            <field>
+              <name>KEY</name><bitRange>[31:16]</bitRange><access>write-only</access>
+              <writeConstraint><range><minimum>0x5AFE</minimum><maximum>0x5AFE</maximum></range></writeConstraint>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>FIFO</name>
+          <description>Reading pops: a read with a side effect</description>
+          <addressOffset>0x10</addressOffset>
+          <access>read-only</access>
+          <fields>
+            <field><name>DATA</name><bitRange>[31:0]</bitRange><readAction>clear</readAction></field>
+          </fields>
+        </register>
+        <register>
+          <name>STROBE</name>
+          <description>No readable field: a write-only register</description>
+          <addressOffset>0x14</addressOffset>
+          <access>write-only</access>
+          <fields>
+            <field><name>GO</name><bitRange>[0:0]</bitRange></field>
+            <field><name>STOP</name><bitRange>[1:1]</bitRange></field>
+          </fields>
+        </register>
+        <register>
+          <name>BUF</name>
+          <description>No fields: one value, FULLREGISTER only</description>
+          <addressOffset>0x18</addressOffset>
+        </register>
+        <register>
+          <name>CH%s</name>
+          <description>A dim register</description>
+          <addressOffset>0x20</addressOffset>
+          <dim>4</dim>
+          <dimIncrement>0x4</dimIncrement>
+          <fields>
+            <field><name>THRESHOLD</name><bitRange>[7:0]</bitRange></field>
+            <field><name>EN%s</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth><dim>2</dim><dimIncrement>1</dimIncrement></field>
+          </fields>
+        </register>
+        <register>
+          <name>PINS</name>
+          <description>A dim field</description>
+          <addressOffset>0x30</addressOffset>
+          <fields>
+            <field><name>IN%s</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth><dim>4</dim><dimIncrement>2</dimIncrement></field>
+          </fields>
+        </register>
+        <register>
+          <name>IDENT</name>
+          <description>One field per access and modifiedWriteValues: the identity cross-check (Kvasir_SDK generated_registers_tests.cpp lists the same rows)</description>
+          <addressOffset>0x34</addressOffset>
+          <fields>
+            <field><name>RW_PLAIN</name><bitRange>[0:0]</bitRange></field>
+            <field><name>RW_ONETOCLEAR</name><bitRange>[1:1]</bitRange><modifiedWriteValues>oneToClear</modifiedWriteValues></field>
+            <field><name>RW_ONETOSET</name><bitRange>[2:2]</bitRange><modifiedWriteValues>oneToSet</modifiedWriteValues></field>
+            <field><name>RW_ONETOTOGGLE</name><bitRange>[3:3]</bitRange><modifiedWriteValues>oneToToggle</modifiedWriteValues></field>
+            <field><name>RW_ZEROTOCLEAR</name><bitRange>[4:4]</bitRange><modifiedWriteValues>zeroToClear</modifiedWriteValues></field>
+            <field><name>RW_ZEROTOSET</name><bitRange>[5:5]</bitRange><modifiedWriteValues>zeroToSet</modifiedWriteValues></field>
+            <field><name>RW_ZEROTOTOGGLE</name><bitRange>[6:6]</bitRange><modifiedWriteValues>zeroToToggle</modifiedWriteValues></field>
+            <field><name>RW_CLEAR</name><bitRange>[7:7]</bitRange><modifiedWriteValues>clear</modifiedWriteValues></field>
+            <field><name>RW_SET</name><bitRange>[8:8]</bitRange><modifiedWriteValues>set</modifiedWriteValues></field>
+            <field><name>RW_MODIFY</name><bitRange>[9:9]</bitRange><modifiedWriteValues>modify</modifiedWriteValues></field>
+            <field><name>RO</name><bitRange>[10:10]</bitRange><access>read-only</access></field>
+            <field><name>WO_ONETOSET</name><bitRange>[11:11]</bitRange><access>write-only</access><modifiedWriteValues>oneToSet</modifiedWriteValues></field>
+            <field><name>WO_ZEROTOCLEAR</name><bitRange>[12:12]</bitRange><access>write-only</access><modifiedWriteValues>zeroToClear</modifiedWriteValues></field>
+            <field>
+              <name>WO_PLAIN</name><bitRange>[13:13]</bitRange><access>write-only</access>
+              <!-- Kvasir: write-only accepted: the identity row of a plain write-only field -->
+            </field>
+          </fields>
+        </register>
+        <cluster>
+          <name>GRP[%s]</name>
+          <description>A register group; its second register is named like the group</description>
+          <addressOffset>0x40</addressOffset>
+          <dim>2</dim>
+          <dimIncrement>0x10</dimIncrement>
+          <register>
+            <name>CFG</name>
+            <addressOffset>0x0</addressOffset>
+            <fields>
+              <field><name>SEL</name><bitRange>[3:0]</bitRange></field>
+            </fields>
+          </register>
+          <register>
+            <name>GRP</name>
+            <description>Named like its group</description>
+            <addressOffset>0x4</addressOffset>
+            <fields>
+              <field><name>EVT</name><bitRange>[7:0]</bitRange></field>
+            </fields>
+          </register>
+        </cluster>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>TC0</name>
+      <description>A peripheral with a derived instance</description>
+      <baseAddress>0x40001000</baseAddress>
+      <interrupt><name>TC</name><value>1</value></interrupt>
+      <registers>
+        <register>
+          <name>COUNT</name>
+          <addressOffset>0x00</addressOffset>
+          <size>16</size>
+          <resetValue>0x0000</resetValue>
+          <fields>
+            <field><name>COUNT</name><bitRange>[15:0]</bitRange></field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral derivedFrom="TC0">
+      <name>TC1</name>
+      <baseAddress>0x40001400</baseAddress>
+      <!-- the same vector as TC0: one name per vector in InterruptNames.hpp -->
+      <interrupt><name>TC</name><value>1</value></interrupt>
+    </peripheral>
+    <peripheral>
+      <name>SERCOM</name>
+      <description>Modes: clusters without dim become peripherals of their own</description>
+      <baseAddress>0x40002000</baseAddress>
+      <interrupt><name>SERCOM</name><value>3</value></interrupt>
+      <registers>
+        <cluster>
+          <name>UART</name>
+          <addressOffset>0x0</addressOffset>
+          <register>
+            <name>CTRLA</name>
+            <addressOffset>0x0</addressOffset>
+            <fields>
+              <field><name>ENABLE</name><bitRange>[1:1]</bitRange></field>
+            </fields>
+          </register>
+        </cluster>
+        <cluster>
+          <name>SPI</name>
+          <addressOffset>0x0</addressOffset>
+          <register>
+            <name>CTRLA</name>
+            <addressOffset>0x0</addressOffset>
+            <fields>
+              <field><name>ENABLE</name><bitRange>[1:1]</bitRange></field>
+              <field><name>MASTER</name><bitRange>[2:2]</bitRange></field>
+            </fields>
+          </register>
+        </cluster>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>INHERIT</name>
+      <description>Register properties passed down (device, peripheral, cluster, register), derivedFrom by SVD name, resetMask</description>
+      <baseAddress>0x40003000</baseAddress>
+      <size>16</size>
+      <access>read-only</access>
+      <registers>
+        <register>
+          <name>STATUS</name>
+          <description>Inherits the peripheral's size (16) and access (read-only)</description>
+          <addressOffset>0x0</addressOffset>
+          <fields>
+            <field><name>LEVEL</name><bitRange>[3:0]</bitRange></field>
+          </fields>
+        </register>
+        <register>
+          <name>CTRL_A</name>
+          <displayName>CTRLA</displayName>
+          <description>A base whose C name (displayName) differs from its SVD name</description>
+          <addressOffset>0x2</addressOffset>
+          <access>read-write</access>
+          <fields>
+            <field><name>EN</name><bitRange>[0:0]</bitRange></field>
+          </fields>
+        </register>
+        <register derivedFrom="CTRL_A">
+          <name>CTRL_B</name>
+          <displayName>CTRLB</displayName>
+          <addressOffset>0x4</addressOffset>
+        </register>
+        <register>
+          <name>DIV</name>
+          <description>resetMask 0: no defined reset value, so no overrideDefaults</description>
+          <addressOffset>0x6</addressOffset>
+          <access>read-write</access>
+          <resetValue>0x0000</resetValue>
+          <resetMask>0x0000</resetMask>
+          <fields>
+            <field>
+              <name>MODE</name><bitRange>[1:0]</bitRange>
+              <enumeratedValues>
+                <enumeratedValue><name>OFF</name><value>0</value></enumeratedValue>
+                <enumeratedValue><name>ON</name><value>1</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>PART</name>
+          <description>resetMask covers bit 1 only: the field's defined bit is checked</description>
+          <addressOffset>0x8</addressOffset>
+          <access>read-write</access>
+          <resetValue>0x0002</resetValue>
+          <resetMask>0x0002</resetMask>
+          <fields>
+            <field>
+              <name>MODE</name><bitRange>[1:0]</bitRange>
+              <enumeratedValues>
+                <enumeratedValue><name>A</name><value>2</value></enumeratedValue>
+                <enumeratedValue><name>B</name><value>3</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <name>ID</name>
+          <description>No fields, inherits read-only: FULLREGISTER is read-only</description>
+          <addressOffset>0xA</addressOffset>
+        </register>
+        <register>
+          <name>TXDATA</name>
+          <description>No fields, write-only: FULLREGISTER is write-only</description>
+          <addressOffset>0xC</addressOffset>
+          <access>write-only</access>
+        </register>
+        <register>
+          <name>ONCE</name>
+          <description>No fields, writeOnce: FULLREGISTER is write-only</description>
+          <addressOffset>0xE</addressOffset>
+          <access>writeOnce</access>
+        </register>
+        <cluster>
+          <dim>2</dim>
+          <dimIncrement>0x1</dimIncrement>
+          <name>LANE.CFG[%s]</name>
+          <description>A dim cluster with its own size and access, and a name sanitizeName changes</description>
+          <addressOffset>0x10</addressOffset>
+          <size>8</size>
+          <access>read-write</access>
+          <register>
+            <name>SEL</name>
+            <addressOffset>0x0</addressOffset>
+            <fields>
+              <field><name>SRC</name><bitRange>[1:0]</bitRange></field>
+            </fields>
+          </register>
+        </cluster>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>SPARE</name>
+      <description>Interrupt only: no registers, base address 0</description>
+      <baseAddress>0x00000000</baseAddress>
+      <interrupt><name>SPARE</name><value>4</value></interrupt>
+    </peripheral>
+  </peripherals>
+</device>

@@ -1,0 +1,14 @@
+{
+    "addressType": "u32",
+    "baseAddresses": [
+        {
+            "address": 0,
+            "index": 0
+        }
+    ],
+    "description": "Interrupt only: no registers, base address 0",
+    "name": "SPARE",
+    "registerGroups": [],
+    "registers": [],
+    "type": "normal"
+}

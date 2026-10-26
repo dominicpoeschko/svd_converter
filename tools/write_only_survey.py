@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Survey of write-only fields a partial write would read back and rewrite: reads the svd_converter's `json` generator output - one folder per SVD,
-converted with the default --write-only-registers=off - and counts what the converter's write-only
+converted with --write-only-registers=off - and counts what the converter's write-only
 guard reports, from the converter's own answer (each register's writeOnlyNoIdentityMask).
 
-    svd_converter <svd> <dir> json            # per SVD
+    svd_converter --write-only-guard=warn --write-only-registers=off <svd> <dir> json   # per SVD
     write_only_survey.py <dir>...             # one table row per folder
     write_only_survey.py -v <dir>...          # and every field
 
