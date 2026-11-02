@@ -262,7 +262,7 @@ int main(int                argc,
         if(generator == "kvasir_bit" && !chip["interrupts"].empty()) {
             auto env = Generator::Kvasir::getEnvironment();
             out.write("InterruptNames.hpp",
-                      env.render(Generator::Kvasir::InterruptNamesTemplate, chip));
+                      env.render(Generator::Kvasir::interruptNamesTemplate, chip));
             // the vectors as objects for the chip's Kvasir::Interrupt (peripherals/Interrupts.hpp)
             auto const interrupts = chip["interrupts"].get<std::vector<Svd::Interrupt>>();
             Svd::checkInterruptCppNames(interrupts);
@@ -281,7 +281,7 @@ int main(int                argc,
                 });
             }
             out.write("Interrupts.hpp",
-                      env.render(Generator::Kvasir::DeviceInterruptsTemplate, model));
+                      env.render(Generator::Kvasir::deviceInterruptsTemplate, model));
         }
         // before the guard's verdict: an exit 2 has written and cleaned the folder all the same
         out.finish();

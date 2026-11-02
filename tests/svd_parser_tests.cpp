@@ -1643,7 +1643,7 @@ void testDeviceInterrupts() {
       {"deviceInterrupts",
        inja::json::array({{{"name", "TIMER_IRQ_0"}, {"value", 2}, {"cppName", "timer_0"}}})}
     };
-    auto const text = env.render(Generator::Kvasir::DeviceInterruptsTemplate, model);
+    auto const text = env.render(Generator::Kvasir::deviceInterruptsTemplate, model);
     CHECK(text.contains("static constexpr ::Kvasir::Nvic::Index<2> timer_0{};   // TIMER_IRQ_0")
             && text.contains("inline constexpr int interruptEnd = 8;")
             && text.contains("std::array<int, 2> interruptGaps{ 0, 1 }"),
@@ -1698,7 +1698,7 @@ void testDiagnosticNames() {
     CHECK(named.contains(", PLAIN>") && named.contains(ctrl),
           "--named-registers: every other register names itself");
 
-    auto const irqs = env.render(Generator::Kvasir::InterruptNamesTemplate, inja::json(chip));
+    auto const irqs = env.render(Generator::Kvasir::interruptNamesTemplate, inja::json(chip));
     CHECK(irqs.contains("std::array<InterruptName, 2>") && irqs.contains("{ 3, \"PERIA_IRQ_0\" }"),
           "InterruptNames.hpp");
     CHECK(irqs.contains(

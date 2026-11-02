@@ -8,7 +8,7 @@
 
 namespace Generator { namespace Kvasir {
 
-    static constexpr auto PeripheralTemplate = R"(
+    static constexpr auto peripheralTemplate = R"(
 #pragma once
 #include "kvasir/Register/Register.hpp"
 #include "kvasir/Register/Types.hpp"
@@ -80,7 +80,7 @@ namespace Kvasir::Peripheral::{{ upper(name) }} {
 
     // The interrupt vectors' names, for compile errors that name an interrupt (Kvasir_SDK StartUp diagnostics), and
     // the SDK's DeviceInterruptNames hook specialised from them: constant-expression only, no flash.
-    static constexpr auto InterruptNamesTemplate = R"(
+    static constexpr auto interruptNamesTemplate = R"(
 #pragma once
 #include "kvasir/Common/Tags.hpp"
 #include "kvasir/StartUp/InterruptNames.hpp"
@@ -115,7 +115,7 @@ struct Kvasir::Startup::Diagnostics::DeviceInterruptNames<Kvasir::Tag::User, Ts.
 };
 )";
 
-    static constexpr auto DeviceInterruptsTemplate = R"(
+    static constexpr auto deviceInterruptsTemplate = R"(
 #pragma once
 #include "InterruptNames.hpp"
 #include "kvasir/Common/Interrupt.hpp"
@@ -138,7 +138,7 @@ inline constexpr std::array<int, {{ length(interruptGaps) }}> interruptGaps{ {{ 
 }
 )";
 
-    static constexpr auto RegisterGroupTemplate = R"(
+    static constexpr auto registerGroupTemplate = R"(
 //{{ registerGroup.description }}
 template<unsigned GroupIndex>
 struct {{ upper(registerGroup.name) }} {
@@ -158,7 +158,7 @@ struct {{ upper(registerGroup.name) }} {
     // The templates are a transcription of the view model (view_model.hpp): every decision - the
     // mode argument, which fields have defaults and what they write, the dim-expanded field lists,
     // the log text - is computed there and unit-tested; the template only prints it.
-    static constexpr auto RegisterTemplate = R"delim(
+    static constexpr auto registerTemplate = R"delim(
 //{{ register.description }}
 {% if register.cluster %}
 template<unsigned Index>
@@ -227,7 +227,7 @@ struct {{ register.cppName }} {
 
     // One field: a number, or an enumeration with its values (ValC). A field cluster (dim) is a
     // template over its index.
-    static constexpr auto FieldTemplate = R"(
+    static constexpr auto fieldTemplate = R"(
 {% if field.isEnum %}
 // the names of {{ lower(field.name) }}'s values (Kvasir::Register::ValueName), found through its enum
 struct {{ upper(field.name) }}ValueNames {
@@ -341,9 +341,9 @@ static constexpr FieldLocation<Addr,
             throw std::runtime_error(dataType + " maxBitDataType failed");
         });
 
-        env.include_template("RegisterGroup", env.parse(RegisterGroupTemplate));
-        env.include_template("Register", env.parse(RegisterTemplate));
-        env.include_template("Field", env.parse(FieldTemplate));
+        env.include_template("RegisterGroup", env.parse(registerGroupTemplate));
+        env.include_template("Register", env.parse(registerTemplate));
+        env.include_template("Field", env.parse(fieldTemplate));
         return env;
     }
 
@@ -351,7 +351,7 @@ static constexpr FieldLocation<Addr,
     inline std::string render(inja::Environment&   env,
                               inja::json const&    peripheral,
                               RenderOptions const& options) {
-        return env.render(PeripheralTemplate, ViewModel::peripheralView(peripheral, options));
+        return env.render(peripheralTemplate, ViewModel::peripheralView(peripheral, options));
     }
 
 }}   // namespace Generator::Kvasir
