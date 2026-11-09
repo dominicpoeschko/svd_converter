@@ -60,52 +60,56 @@ add_test(NAME test_svd_parser COMMAND test_svd_parser)
 svd_converter_add_test(test_view_model view_model_tests.cpp)
 add_test(NAME test_view_model COMMAND test_view_model)
 
-# Integration tests run against the real RP2350 svd from the kvasir-io/chip_rp2350 repo. Set SVD_CONVERTER_TEST_SVD_FILE
-# to a local copy to skip the download.
+# A real vendor SVD for the property test below: chip_rp2350's chip.svd at master. The test checks what every converted
+# SVD holds, no fact of that chip's register map, so an edit of the SVD passes it unless it breaks one of them (which
+# the chip's own conversion would hit as well). Set SVD_CONVERTER_TEST_SVD_FILE to a local copy to skip the download; a
+# build tree keeps its first download (delete <build>/rp2350.svd for today's master).
 set(SVD_CONVERTER_TEST_SVD_FILE
     ""
-    CACHE FILEPATH "Local RP2350 svd file for the integration tests (downloaded when empty)")
+    CACHE FILEPATH "Local RP2350 svd file for the property test (downloaded when empty)")
 
 if(SVD_CONVERTER_TEST_SVD_FILE)
-    set(test_svd_file ${SVD_CONVERTER_TEST_SVD_FILE})
+    set(vendor_svd_file ${SVD_CONVERTER_TEST_SVD_FILE})
 else()
-    set(test_svd_file ${CMAKE_CURRENT_BINARY_DIR}/rp2350.svd)
-    if(NOT EXISTS ${test_svd_file})
+    set(vendor_svd_file ${CMAKE_CURRENT_BINARY_DIR}/rp2350.svd)
+    if(NOT EXISTS ${vendor_svd_file})
         message(STATUS "Downloading RP2350 svd")
-        # pinned to a chip_rp2350 commit, so an SVD edit there does not break this CI; bump it together with
-        # rp2350_tests.cpp's counts
-        file(DOWNLOAD
-             https://raw.githubusercontent.com/kvasir-io/chip_rp2350/d48a3f36eb3acc137fbc14f215e6b627f7a67712/chip.svd
-             ${test_svd_file} STATUS download_status)
+        file(DOWNLOAD https://raw.githubusercontent.com/kvasir-io/chip_rp2350/master/chip.svd ${vendor_svd_file}
+             STATUS download_status)
         list(GET download_status 0 download_code)
         if(NOT download_code EQUAL 0)
-            file(REMOVE ${test_svd_file})
+            file(REMOVE ${vendor_svd_file})
             list(GET download_status 1 download_error)
             message(FATAL_ERROR "RP2350 svd download failed: ${download_error}")
         endif()
     endif()
 endif()
 
-svd_converter_add_test(test_rp2350 rp2350_tests.cpp)
+svd_converter_add_test(test_svd_properties svd_properties_tests.cpp)
 
-# End to end: run the svd_converter binary with both builtin generators, then let test_rp2350 compare the written json
-# files against its in-process parse result (chipFromSVD(device): the SVD as written, so the opt-out options).
-add_test(NAME e2e_make_directories
-         COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/generated_json
-                 ${CMAKE_CURRENT_BINARY_DIR}/generated_kvasir)
-set_tests_properties(e2e_make_directories PROPERTIES FIXTURES_SETUP e2e_directories)
-
+# End to end, per SVD: the svd_converter binary writes the json generator's output with the opt-out options, then
+# test_svd_properties compares every file with its in-process model (chipFromSVD(device): the SVD as written) and checks
+# the invariants. On the golden fixtures (offline, with the `Kvasir:` comment markers) and on the vendor SVD.
 set(e2e_optout --write-only-guard=off --write-only-registers=off --write-only-mask=off)
-add_test(NAME e2e_generate_json COMMAND svd_converter ${e2e_optout} ${test_svd_file}
-                                        ${CMAKE_CURRENT_BINARY_DIR}/generated_json json)
-set_tests_properties(e2e_generate_json PROPERTIES FIXTURES_REQUIRED e2e_directories FIXTURES_SETUP e2e_json)
-
-add_test(NAME e2e_generate_kvasir_bit COMMAND svd_converter ${e2e_optout} ${test_svd_file}
-                                              ${CMAKE_CURRENT_BINARY_DIR}/generated_kvasir kvasir_bit)
-set_tests_properties(e2e_generate_kvasir_bit PROPERTIES FIXTURES_REQUIRED e2e_directories)
-
-add_test(NAME test_rp2350 COMMAND test_rp2350 ${test_svd_file} ${CMAKE_CURRENT_BINARY_DIR}/generated_json)
-set_tests_properties(test_rp2350 PROPERTIES FIXTURES_REQUIRED e2e_json)
+foreach(e2e "features|${CMAKE_CURRENT_SOURCE_DIR}/golden/features.svd"
+            "guard|${CMAKE_CURRENT_SOURCE_DIR}/write_only/guard.svd" "rp2350|${vendor_svd_file}")
+    string(REPLACE "|" ";" e2e "${e2e}")
+    list(GET e2e 0 name)
+    list(GET e2e 1 svd)
+    set(e2e_out ${CMAKE_CURRENT_BINARY_DIR}/e2e/${name})
+    add_test(NAME e2e_${name}_make_directories COMMAND ${CMAKE_COMMAND} -E make_directory ${e2e_out}/json
+                                                       ${e2e_out}/kvasir_bit)
+    set_tests_properties(e2e_${name}_make_directories PROPERTIES FIXTURES_SETUP e2e_${name}_directories)
+    add_test(NAME e2e_${name}_generate_json COMMAND svd_converter ${e2e_optout} ${svd} ${e2e_out}/json json)
+    set_tests_properties(e2e_${name}_generate_json PROPERTIES FIXTURES_REQUIRED e2e_${name}_directories FIXTURES_SETUP
+                                                              e2e_${name}_json)
+    add_test(NAME test_svd_properties_${name} COMMAND test_svd_properties ${svd} ${e2e_out}/json)
+    set_tests_properties(test_svd_properties_${name} PROPERTIES FIXTURES_REQUIRED e2e_${name}_json)
+endforeach()
+# the vendor SVD through the kvasir_bit generator as well (the golden tests cover the fixtures)
+add_test(NAME e2e_rp2350_generate_kvasir_bit COMMAND svd_converter ${e2e_optout} ${vendor_svd_file}
+                                                     ${CMAKE_CURRENT_BINARY_DIR}/e2e/rp2350/kvasir_bit kvasir_bit)
+set_tests_properties(e2e_rp2350_generate_kvasir_bit PROPERTIES FIXTURES_REQUIRED e2e_rp2350_directories)
 
 # The write-only guard on the command line (tests/write_only/guard.svd: one unclassified field, one accepted, one
 # register with no readable field): the exit code and the report per mode.
